@@ -1,0 +1,76 @@
+{
+  "name": "Malenkie Legendy MVP",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "telegram_trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "credentials": {"telegramApi": {"id": "__SET_IN_N8N__", "name": "Telegram Bot"}}
+    },
+    {
+      "parameters": {
+        "functionCode": "const text = $json.message?.text || '';\nconst userId = String($json.message?.from?.id || '');\nconst state = { step: 'menu' };\nif (text === '/start') state.step = 'start';\nif (text.toLowerCase().includes('продолжить')) state.step = 'continue';\nreturn [{json: {userId, text, state}}];"
+      },
+      "id": "state_router",
+      "name": "State Router",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/api/story/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"external_user_id\": $json.userId,\n  \"channel\": \"telegram\",\n  \"child_name\": \"Лёва\",\n  \"age\": 6,\n  \"gender\": \"boy\",\n  \"style\": \"auto\",\n  \"photo_enabled\": false,\n  \"parent_note\": \"День рождения\"\n}",
+        "options": {}
+      },
+      "id": "generate_story",
+      "name": "Generate Story",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Trigger\"].json[\"message\"][\"chat\"][\"id\"]}}",
+        "text": "={{$json.title + '\\n\\n' + $json.story_text + '\\n\\n' + $json.next_hook}}",
+        "additionalFields": {
+          "replyMarkup": "inlineKeyboard",
+          "inlineKeyboard": "={{ [[{\"text\":\"Продолжить историю\",\"callback_data\":\"continue\"}]] }}"
+        }
+      },
+      "id": "send_story",
+      "name": "Send Story",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 260],
+      "credentials": {"telegramApi": {"id": "__SET_IN_N8N__", "name": "Telegram Bot"}}
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Trigger\"].json[\"message\"][\"chat\"][\"id\"]}}",
+        "text": "={{'PDF: ' + ($json.pdf_url || 'не создан') + '\\nКартинки: ' + ($json.images_urls || []).join('\\n')}}"
+      },
+      "id": "send_assets",
+      "name": "Send Assets Links",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 360],
+      "credentials": {"telegramApi": {"id": "__SET_IN_N8N__", "name": "Telegram Bot"}}
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {"main": [[{"node": "State Router", "type": "main", "index": 0}]]},
+    "State Router": {"main": [[{"node": "Generate Story", "type": "main", "index": 0}]]},
+    "Generate Story": {"main": [[{"node": "Send Story", "type": "main", "index": 0}, {"node": "Send Assets Links", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {}
+}
