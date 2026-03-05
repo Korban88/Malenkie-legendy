@@ -37,8 +37,8 @@ def create_order_endpoint(payload: OrderCreateRequest, db: Session = Depends(get
         'status': order.status,
         'amount_rub': order.amount_rub,
         'provider': order.provider,
-        'payment_url': order.metadata.get('payment_url'),
-        'instructions': order.metadata.get('instructions'),
+        'payment_url': order.meta.get('payment_url'),
+        'instructions': order.meta.get('instructions'),
     }
 
 

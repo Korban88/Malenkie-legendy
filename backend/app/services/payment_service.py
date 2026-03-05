@@ -26,7 +26,7 @@ def create_order(
         amount_rub=amount_rub,
         provider=provider,
         status='created',
-        metadata={
+        meta={
             'payment_url': f'https://pay.example/{provider}/{user.id}/{child_id}/{tariff}',
             'instructions': 'После оплаты вызовите /api/payments/confirm',
         },

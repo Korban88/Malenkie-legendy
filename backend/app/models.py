@@ -63,5 +63,5 @@ class Order(Base):
     amount_rub: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), default='created', index=True)
     provider_payment_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    meta: Mapped[dict] = mapped_column(JSONB, default=dict, name='metadata')
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
