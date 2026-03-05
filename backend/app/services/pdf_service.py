@@ -23,13 +23,15 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str]) -> str:
     y -= 40
 
     c.setFont('Helvetica', 11)
-    for line in _wrap(story_text, 95):
-        c.drawString(40, y, line)
-        y -= 16
-        if y < 100:
-            c.showPage()
-            c.setFont('Helvetica', 11)
-            y = h - 50
+    for para in story_text.split('\n\n'):
+        for line in _wrap(para.strip(), 95):
+            c.drawString(40, y, line)
+            y -= 16
+            if y < 100:
+                c.showPage()
+                c.setFont('Helvetica', 11)
+                y = h - 50
+        y -= 10  # отступ между абзацами
 
     y -= 20
     c.setFont('Helvetica-Bold', 12)
