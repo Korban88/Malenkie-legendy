@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 
@@ -14,6 +15,17 @@ STYLE_BY_AGE = {
     range(11, 13): 'epic',
 }
 
+STYLE_NAMES_RU = {
+    'tender':    'нежный и тёплый',
+    'magical':   'волшебный и сказочный',
+    'adventure': 'приключенческий',
+    'epic':      'эпический',
+}
+
+_STYLE_WORDS_RE = re.compile(
+    r'\b(magical|tender|adventure|epic|fairy[\s_]?tale)\b', re.IGNORECASE
+)
+
 
 def choose_style(age: int, preferred_style: str) -> str:
     if preferred_style and preferred_style != 'auto':
@@ -24,7 +36,22 @@ def choose_style(age: int, preferred_style: str) -> str:
     return 'magical'
 
 
+def _strip_english_style_words(text: str) -> str:
+    return _STYLE_WORDS_RE.sub('', text)
+
+
+def _format_paragraphs(text: str, sentences_per_para: int = 3) -> str:
+    parts = re.split(r'(?<=[.!?])\s+', text.strip())
+    paragraphs = []
+    for i in range(0, len(parts), sentences_per_para):
+        chunk = ' '.join(parts[i:i + sentences_per_para])
+        if chunk:
+            paragraphs.append(chunk)
+    return '\n\n'.join(paragraphs)
+
+
 def _prompt(payload: dict) -> str:
+    style_ru = STYLE_NAMES_RU.get(payload['style'], payload['style'])
     return (
         'Ты детский писатель. Сгенерируй безопасную историю на русском языке. '
         'Верни строго JSON без markdown в формате: '
@@ -32,7 +59,7 @@ def _prompt(payload: dict) -> str:
         '"memory":{"world_state":{},"character_traits":{},"open_threads":[]},'
         '"next_hook":"..."}. '
         f"Данные ребёнка: имя={payload['child_name']}, возраст={payload['age']}, пол={payload['gender']}. "
-        f"Стиль: {payload['style']}. Номер эпизода: {payload['episode_number']}. "
+        f"Стиль: {style_ru}. Номер эпизода: {payload['episode_number']}. "
         f"Краткая память прошлого: {json.dumps(payload.get('previous_memory', {}), ensure_ascii=False)}. "
         f"Краткий recap прошлых эпизодов: {json.dumps(payload.get('previous_recap', []), ensure_ascii=False)}. "
         f"Заметка родителя: {payload.get('parent_note') or 'нет'}."
@@ -65,9 +92,9 @@ def _call_openrouter(payload: dict) -> dict:
 
 def _template_fallback(payload: dict) -> dict:
     title = f"{payload['child_name']} и сияющий компас"
-    style = payload['style']
+    style_ru = STYLE_NAMES_RU.get(payload['style'], payload['style'])
     text = (
-        f"В этот вечер {payload['child_name']} заметил(а), что звёзды шепчут особенно {style}. "
+        f"В этот вечер {payload['child_name']} заметил(а), что звёзды шепчут особенно {style_ru}. "
         'На дорожке у дома появился маленький компас, который показывал не на север, а на добрые дела. '
         'Герой помог светлячкам найти дом, успокоил ветер в парке и научился слушать своё сердце. '
         'К концу прогулки город засиял тёплым светом, а рядом появились новые друзья.'
@@ -91,13 +118,16 @@ def generate_story_payload(payload: dict) -> dict:
 
     if provider == 'openrouter':
         try:
-            return _call_openrouter(payload)
+            result = _call_openrouter(payload)
         except Exception:
             if settings.backup_text_provider == 'template':
-                return _template_fallback(payload)
-            raise
+                result = _template_fallback(payload)
+            else:
+                raise
+    elif provider == 'template':
+        result = _template_fallback(payload)
+    else:
+        raise ValueError(f'Unsupported text provider: {provider}')
 
-    if provider == 'template':
-        return _template_fallback(payload)
-
-    raise ValueError(f'Unsupported text provider: {provider}')
+    result['story_text'] = _format_paragraphs(_strip_english_style_words(result['story_text']))
+    return result

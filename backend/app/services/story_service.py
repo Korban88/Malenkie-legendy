@@ -34,6 +34,16 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
     if not payload.get('child_name') or not payload.get('age'):
         raise ValueError('child_name and age are required for new child')
 
+    existing_child = db.scalar(
+        select(Child).where(
+            Child.user_id == user_id,
+            Child.name == payload['child_name'],
+            Child.age == payload['age'],
+        )
+    )
+    if existing_child:
+        return existing_child
+
     child = Child(
         user_id=user_id,
         name=payload['child_name'],
