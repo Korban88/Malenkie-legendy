@@ -22,6 +22,13 @@ STYLE_NAMES_RU = {
     'epic':      'эпический',
 }
 
+STYLE_ADVERBS_RU = {
+    'tender':    'нежно',
+    'magical':   'волшебно',
+    'adventure': 'таинственно',
+    'epic':      'торжественно',
+}
+
 _STYLE_WORDS_RE = re.compile(
     r'\b(magical|tender|adventure|epic|fairy[\s_]?tale)\b', re.IGNORECASE
 )
@@ -92,9 +99,9 @@ def _call_openrouter(payload: dict) -> dict:
 
 def _template_fallback(payload: dict) -> dict:
     title = f"{payload['child_name']} и сияющий компас"
-    style_ru = STYLE_NAMES_RU.get(payload['style'], payload['style'])
+    style_adv = STYLE_ADVERBS_RU.get(payload['style'], STYLE_NAMES_RU.get(payload['style'], payload['style']))
     text = (
-        f"В этот вечер {payload['child_name']} заметил(а), что звёзды шепчут особенно {style_ru}. "
+        f"В этот вечер {payload['child_name']} заметил(а), что звёзды шепчут особенно {style_adv}. "
         'На дорожке у дома появился маленький компас, который показывал не на север, а на добрые дела. '
         'Герой помог светлячкам найти дом, успокоил ветер в парке и научился слушать своё сердце. '
         'К концу прогулки город засиял тёплым светом, а рядом появились новые друзья.'
