@@ -91,15 +91,20 @@ def generate_story(db: Session, payload: dict) -> Story:
             }
         )
 
-        images_urls, photo_hash = generate_images(
-            child_name=child.name,
-            age=child.age,
-            style=style,
-            photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
-            count=3,
-        )
-        if photo_hash:
-            child.photo_hash = photo_hash
+        images_urls: list[str] = []
+        photo_hash = None
+        try:
+            images_urls, photo_hash = generate_images(
+                child_name=child.name,
+                age=child.age,
+                style=style,
+                photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
+                count=3,
+            )
+            if photo_hash:
+                child.photo_hash = photo_hash
+        except Exception as img_exc:
+            story.error_message = f'images_failed: {img_exc}'
 
         pdf_url = generate_pdf(text_payload['title'], text_payload['story_text'], images_urls)
 
