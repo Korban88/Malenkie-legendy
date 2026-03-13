@@ -134,7 +134,8 @@ def generate_story(db: Session, payload: dict) -> Story:
                 style=style,
                 photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
                 scene_prompts=text_payload.get('image_prompts', []),
-                count=5,
+                count=8,
+                image_style=payload.get('image_style', 'watercolor'),
             )
             if photo_hash:
                 child.photo_hash = photo_hash
@@ -148,6 +149,7 @@ def generate_story(db: Session, payload: dict) -> Story:
             episode_number=episode_number,
             child_name=child.name,
             next_hook=text_payload.get('next_hook', ''),
+            gender=child.gender,
         )
 
         story.title = text_payload['title']

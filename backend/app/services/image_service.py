@@ -10,23 +10,26 @@ from ..config import get_settings
 
 settings = get_settings()
 
-# Shot-type modifiers ensure visual diversity across the 5 illustrations
+# Shot-type modifiers ensure visual diversity across the 8 illustrations
 _SHOT_MODIFIERS = [
     "wide panoramic establishing shot, atmospheric, no characters visible",
     "medium shot, child protagonist as focus, expressive face, dynamic pose",
     "dramatic low angle, intense atmosphere, contrasting shadows and light",
     "close-up portrait, magical animal companion, expressive eyes, detailed",
     "wide joyful shot, warm golden sunlight, triumphant celebration moment",
+    "over-the-shoulder view, exploring magical landscape, sense of wonder",
+    "gentle medium shot, two characters side by side, peaceful and warm",
+    "wide triumphant shot, golden hour light, heroes victorious, epic moment",
 ]
 
-_STYLE_SUFFIX = {
-    'magic':     'soft watercolor, enchanted atmosphere, warm golden tones',
-    'magical':   'soft watercolor, enchanted atmosphere, warm golden tones',
-    'tender':    'pastel watercolor, gentle light, cozy and dreamy',
-    'adventure': 'vibrant gouache, dynamic composition, rich saturated colors',
-    'nature':    'detailed watercolor, lush greens, natural dappled light',
-    'space':     'digital art, cosmic blues and purples, glowing stardust',
-    'epic':      'dramatic painterly style, rich deep colors, heroic lighting',
+# Image style presets — maps image_style key to DALL-E prompt suffix
+_IMG_STYLE_SUFFIX = {
+    'ghibli':     'Studio Ghibli style, soft hand-painted watercolor, anime-inspired, gentle whimsical atmosphere',
+    'disney':     'Disney fairy tale style, vibrant cheerful colors, cute rounded characters, magical sparkles',
+    'pixar':      'Pixar 3D animation style, richly detailed, warm cinematic lighting, expressive characters',
+    'watercolor': 'soft watercolor illustration, dreamy pastel tones, gentle brushstrokes, traditional art',
+    'cartoon':    'cartoon illustration, bold black outlines, bright saturated colors, playful fun style',
+    'storybook':  "classic children's storybook illustration, detailed ink and watercolor, warm cozy feeling",
 }
 
 _BASE_QUALITY = (
@@ -43,11 +46,11 @@ def _save_image_bytes(data: bytes, out_dir: Path) -> str:
     return filename
 
 
-def _build_prompt(scene_prompt: str, style: str, shot_idx: int) -> str:
-    style_sfx = _STYLE_SUFFIX.get(style, 'watercolor style, warm colors')
-    shot_mod = _SHOT_MODIFIERS[shot_idx] if shot_idx < len(_SHOT_MODIFIERS) else ""
-    # Keep prompt under 1000 chars for DALL-E compatibility
-    base = f"{scene_prompt}, {shot_mod}, {style_sfx}, {_BASE_QUALITY}"
+def _build_prompt(scene_prompt: str, style: str, shot_idx: int,
+                  image_style: str = 'watercolor') -> str:
+    img_style_sfx = _IMG_STYLE_SUFFIX.get(image_style, _IMG_STYLE_SUFFIX['watercolor'])
+    shot_mod = _SHOT_MODIFIERS[shot_idx] if shot_idx < len(_SHOT_MODIFIERS) else ''
+    base = f"{scene_prompt}, {shot_mod}, {img_style_sfx}, {_BASE_QUALITY}"
     return base[:950]
 
 
@@ -57,7 +60,8 @@ def generate_images(
     style: str,
     photo_base64: str | None,
     scene_prompts: list[str] | None = None,
-    count: int = 5,
+    count: int = 8,
+    image_style: str = 'watercolor',
 ) -> tuple[list[str], str | None]:
     urls: list[str] = []
     photo_hash = None
@@ -78,7 +82,7 @@ def generate_images(
                 f"{style} fairy tale scene {i + 1}"
             )
 
-        prompt = _build_prompt(base_prompt, style, i)
+        prompt = _build_prompt(base_prompt, style, i, image_style)
 
         try:
             filename = _generate_single(prompt, photo_base64 if i > 0 else None)

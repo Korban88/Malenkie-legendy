@@ -9,6 +9,7 @@ class StoryGenerateRequest(BaseModel):
     age: int | None = Field(default=None, ge=2, le=12)
     gender: str = 'neutral'
     style: str = 'auto'
+    image_style: str = 'watercolor'
     parent_note: str | None = None
     photo_enabled: bool = False
     photo_base64: str | None = None

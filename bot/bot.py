@@ -33,12 +33,13 @@ class Form(StatesGroup):
     age = State()
     gender = State()
     style = State()
+    img_style = State()   # Стиль иллюстраций
     animal = State()      # Любимое животное (текст)
     color = State()       # Любимый цвет (кнопки)
     hobby = State()       # Любимое занятие (кнопки)
     place = State()       # Любимое место (кнопки)
-    photo_choice = State()  # Добавить фото? (кнопки)
-    photo_upload = State()  # Ожидание фото
+    photo_choice = State()
+    photo_upload = State()
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +79,23 @@ def kb_style() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🌙 Нежная (малышам)", callback_data="style:tender"),
             InlineKeyboardButton(text="⚔️ Эпическая", callback_data="style:epic"),
+        ],
+    ])
+
+
+def kb_img_style() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎨 Акварель", callback_data="img_style:watercolor"),
+            InlineKeyboardButton(text="🌸 Студия Гибли", callback_data="img_style:ghibli"),
+        ],
+        [
+            InlineKeyboardButton(text="✨ Disney", callback_data="img_style:disney"),
+            InlineKeyboardButton(text="🎬 Pixar", callback_data="img_style:pixar"),
+        ],
+        [
+            InlineKeyboardButton(text="🖍 Мультик", callback_data="img_style:cartoon"),
+            InlineKeyboardButton(text="📖 Книжная", callback_data="img_style:storybook"),
         ],
     ])
 
@@ -239,7 +257,7 @@ async def cb_gender(call: CallbackQuery, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 4: Стиль
+# Шаг 4: Стиль сюжета
 # ---------------------------------------------------------------------------
 
 @dp.callback_query(Form.style, F.data.startswith("style:"))
@@ -247,11 +265,43 @@ async def cb_style(call: CallbackQuery, state: FSMContext):
     style = call.data.split(":")[1]
     await state.update_data(style=style)
     await call.message.edit_reply_markup(reply_markup=None)
+    await call.message.answer(
+        "🖼 Выбери стиль иллюстраций для сказки:\n\n"
+        "• 🎨 Акварель — нежная ручная акварель\n"
+        "• 🌸 Студия Гибли — аниме, «Мой сосед Тоторо»\n"
+        "• ✨ Disney — яркие волшебные персонажи\n"
+        "• 🎬 Pixar — объёмный 3D-мультфильм\n"
+        "• 🖍 Мультик — яркий плоский мультяшный стиль\n"
+        "• 📖 Книжная — классическая книжная иллюстрация",
+        reply_markup=kb_img_style(),
+    )
+    await state.set_state(Form.img_style)
+    await call.answer()
+
+
+# ---------------------------------------------------------------------------
+# Шаг 5: Стиль иллюстраций
+# ---------------------------------------------------------------------------
+
+@dp.callback_query(Form.img_style, F.data.startswith("img_style:"))
+async def cb_img_style(call: CallbackQuery, state: FSMContext):
+    img_style = call.data.split(":")[1]
+    style_names = {
+        'watercolor': 'Акварель 🎨',
+        'ghibli':     'Студия Гибли 🌸',
+        'disney':     'Disney ✨',
+        'pixar':      'Pixar 🎬',
+        'cartoon':    'Мультик 🖍',
+        'storybook':  'Книжная 📖',
+    }
+    await state.update_data(image_style=img_style)
+    await call.message.edit_reply_markup(reply_markup=None)
 
     data = await state.get_data()
     name = data.get("child_name", "Герой")
 
     await call.message.answer(
+        f"{style_names.get(img_style, img_style)} — отличный выбор! 🌟\n\n"
         f"🐾 Какое любимое животное у {name}?\n\n"
         "Напиши любое — оно станет волшебным другом в сказке!\n"
         "(например: кот, дракон, единорог, лиса, черепаха...)"
@@ -261,7 +311,7 @@ async def cb_style(call: CallbackQuery, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 5: Любимое животное (свободный текст)
+# Шаг 6: Любимое животное (свободный текст)
 # ---------------------------------------------------------------------------
 
 @dp.message(Form.animal)
@@ -279,7 +329,7 @@ async def form_animal(message: Message, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 6: Любимый цвет
+# Шаг 7: Любимый цвет
 # ---------------------------------------------------------------------------
 
 @dp.callback_query(Form.color, F.data.startswith("color:"))
@@ -301,7 +351,7 @@ async def cb_color(call: CallbackQuery, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 7: Хобби
+# Шаг 8: Хобби
 # ---------------------------------------------------------------------------
 
 @dp.callback_query(Form.hobby, F.data.startswith("hobby:"))
@@ -310,7 +360,7 @@ async def cb_hobby(call: CallbackQuery, state: FSMContext):
     await state.update_data(hobby=hobby)
     await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer(
-        f"Супер! Это станет особой способностью героя 💪\n\n"
+        "Супер! Это станет особой способностью героя 💪\n\n"
         "Где любимое место для приключений?",
         reply_markup=kb_place(),
     )
@@ -319,7 +369,7 @@ async def cb_hobby(call: CallbackQuery, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 8: Любимое место
+# Шаг 9: Любимое место
 # ---------------------------------------------------------------------------
 
 @dp.callback_query(Form.place, F.data.startswith("place:"))
@@ -342,7 +392,7 @@ async def cb_place(call: CallbackQuery, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 9: Выбор — добавить фото или нет
+# Шаг 10: Выбор — добавить фото или нет
 # ---------------------------------------------------------------------------
 
 @dp.callback_query(Form.photo_choice, F.data.startswith("photo:"))
@@ -364,12 +414,11 @@ async def cb_photo_choice(call: CallbackQuery, state: FSMContext):
 
 
 # ---------------------------------------------------------------------------
-# Шаг 10: Приём фото
+# Шаг 11: Приём фото
 # ---------------------------------------------------------------------------
 
 @dp.message(Form.photo_upload, F.photo)
 async def form_photo(message: Message, state: FSMContext):
-    # Get the largest available photo
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     downloaded = await bot.download_file(file.file_path)
@@ -394,25 +443,32 @@ async def _generate(trigger_message: Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
 
-    child_name = data.get("child_name", "Герой")
-    age = data.get("age", 7)
-    gender = data.get("gender", "neutral")
-    style = data.get("style", "auto")
-    animal = data.get("favorite_animal", "кот")
-    color = data.get("favorite_color", "синий")
-    hobby = data.get("hobby", "рисование")
-    place = data.get("favorite_place", "лес")
-    photo_b64 = data.get("photo_base64")
-    photo_enabled = data.get("photo_enabled", False)
-    photo_consent = data.get("photo_consent", False)
+    child_name  = data.get("child_name", "Герой")
+    age         = data.get("age", 7)
+    gender      = data.get("gender", "neutral")
+    style       = data.get("style", "auto")
+    image_style = data.get("image_style", "watercolor")
+    animal      = data.get("favorite_animal", "кот")
+    color       = data.get("favorite_color", "синий")
+    hobby       = data.get("hobby", "рисование")
+    place       = data.get("favorite_place", "лес")
+    photo_b64   = data.get("photo_base64")
+    photo_enabled  = data.get("photo_enabled", False)
+    photo_consent  = data.get("photo_consent", False)
+
+    img_style_labels = {
+        'watercolor': 'акварель', 'ghibli': 'Студия Гибли', 'disney': 'Disney',
+        'pixar': 'Pixar', 'cartoon': 'мультик', 'storybook': 'книжная',
+    }
 
     await trigger_message.answer(
         f"✨ Создаю персональную сказку для {child_name}...\n\n"
         f"🐾 Любимое животное: {animal}\n"
         f"🎨 Любимый цвет: {color}\n"
         f"💪 Любимое занятие: {hobby}\n"
-        f"🗺 Место приключений: {place}\n\n"
-        "Это займёт 1–3 минуты. Не закрывай чат! 📖"
+        f"🗺 Место приключений: {place}\n"
+        f"🖼 Стиль иллюстраций: {img_style_labels.get(image_style, image_style)}\n\n"
+        "Это займёт 2–4 минуты. Не закрывай чат! 📖"
     )
 
     payload = {
@@ -422,6 +478,7 @@ async def _generate(trigger_message: Message, state: FSMContext):
         "age": age,
         "gender": gender,
         "style": style,
+        "image_style": image_style,
         "favorite_animal": animal,
         "favorite_color": color,
         "hobby": hobby,
@@ -433,7 +490,7 @@ async def _generate(trigger_message: Message, state: FSMContext):
         payload["photo_base64"] = photo_b64
 
     try:
-        async with httpx.AsyncClient(timeout=240) as client:
+        async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(f"{BACKEND_URL}/api/story/generate", json=payload)
             resp.raise_for_status()
             result = resp.json()
@@ -454,43 +511,43 @@ async def _generate(trigger_message: Message, state: FSMContext):
         return
 
     story_text = result.get("story_text")
-    pdf_url = result.get("pdf_url")
+    pdf_url    = result.get("pdf_url")
     images_urls = result.get("images_urls") or []
-    episode = result.get("episode_number", 1)
-    title = result.get("title", "")
+    episode    = result.get("episode_number", 1)
+    title      = result.get("title", "")
 
-    # Episode header for serial stories
     if episode > 1:
         await trigger_message.answer(
             f"📚 *Эпизод {episode}: продолжение приключений {child_name}!*\n\n"
-            f"История продолжается с того места, где остановилась в прошлый раз...",
+            "История продолжается с того места, где остановилась в прошлый раз...",
             parse_mode="Markdown",
         )
 
-    # Story text (split if too long for Telegram's 4096 char limit)
     if story_text:
         chunk_size = 4000
         chunks = [story_text[i:i + chunk_size] for i in range(0, len(story_text), chunk_size)]
         for chunk in chunks:
             await trigger_message.answer(chunk)
 
-    # Illustrations
     if images_urls:
         await trigger_message.answer(f"🎨 Иллюстрации к сказке «{title}»:")
 
+    captions = [
+        "🌍 Мир сказки",
+        "👀 Первое открытие",
+        "⚡ Испытание",
+        f"🐾 {animal.capitalize()} — верный друг",
+        "🗺 Путешествие",
+        "✨ Особая способность",
+        "🌟 Связующая сцена",
+        "🏆 Победа!",
+    ]
     for idx, img_url in enumerate(images_urls):
         try:
             async with httpx.AsyncClient(timeout=30) as img_client:
                 img_resp = await img_client.get(img_url)
                 img_resp.raise_for_status()
             filename = img_url.split("/")[-1]
-            captions = [
-                "🌍 Мир сказки",
-                "👀 Первое открытие",
-                "⚡ Испытание",
-                f"🐾 {animal.capitalize()} — верный друг",
-                "🏆 Победа!",
-            ]
             caption = captions[idx] if idx < len(captions) else f"Иллюстрация {idx + 1}"
             await trigger_message.answer_photo(
                 photo=BufferedInputFile(img_resp.content, filename=filename),
@@ -499,12 +556,10 @@ async def _generate(trigger_message: Message, state: FSMContext):
         except Exception:
             pass
 
-    # Next hook (cliffhanger)
     next_hook = result.get("next_hook")
     if next_hook:
         await trigger_message.answer(f"💫 _{next_hook}_", parse_mode="Markdown")
 
-    # Final buttons
     await trigger_message.answer(
         "📖 Сказка готова!" + (" Скачай PDF для чтения вслух!" if pdf_url else ""),
         reply_markup=kb_after_story(pdf_url, episode, child_name),

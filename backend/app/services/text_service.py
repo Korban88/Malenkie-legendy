@@ -28,6 +28,8 @@ STYLE_NAMES_RU = {
 _STYLE_WORDS_RE = re.compile(
     r'\b(magical|tender|adventure|epic|fairy[\s_]?tale|magic|nature|space)\b', re.IGNORECASE
 )
+# Remove any standalone English word (2+ ASCII letters) from Russian text
+_ENGLISH_WORDS_RE = re.compile(r'(?<![а-яёА-ЯЁ])\b[a-zA-Z]{2,}\b(?![а-яёА-ЯЁ])')
 
 
 def choose_style(age: int, preferred_style: str) -> str:
@@ -41,6 +43,11 @@ def choose_style(age: int, preferred_style: str) -> str:
 
 def _strip_english_style_words(text: str) -> str:
     return _STYLE_WORDS_RE.sub('', text)
+
+
+def _strip_all_english_words(text: str) -> str:
+    """Remove standalone English words that sneak into Russian text."""
+    return _ENGLISH_WORDS_RE.sub('', text)
 
 
 def _prompt(payload: dict) -> str:
@@ -126,20 +133,31 @@ def _prompt(payload: dict) -> str:
         f'5) Любимое животное "{animal}" должно присутствовать в сюжете от начала до конца\n'
         '6) Герой проявляет настоящий характер: смелость, доброту, смекалку, иногда страх или сомнение\n'
         '7) Текст разбит на абзацы двойным переносом строки \\n\\n\n\n'
-        'ТРЕБОВАНИЯ К IMAGE PROMPTS (5 штук на английском, 20–28 слов каждый):\n'
-        f'CHARACTER APPEARANCE для промптов [1],[2],[4]: используй ТОЧНО ТАКОЕ описание: "{char_desc}"\n'
+        'ТРЕБОВАНИЯ К IMAGE PROMPTS (8 штук на английском, 20–28 слов каждый):\n'
+        f'CHARACTER APPEARANCE — используй ТОЧНО ТАКОЕ описание в промптах [1],[2],[4],[5],[7]: "{char_desc}"\n'
         f'[0] WORLD SHOT: atmospheric panoramic view of the magical {place}, NO characters visible, '
         f'wide establishing shot, rich details, enchanted atmosphere\n'
-        f'[1] DISCOVERY: {char_desc} named {name} discovering something magical for the first time, '
-        f'wonder on face, medium shot, soft light\n'
-        f'[2] CHALLENGE: {char_desc} named {name}, dramatic tense moment facing the main obstacle, '
-        f'dynamic angle, intense atmosphere\n'
-        f'[3] HELPER: magical {animal} as companion or ally, expressive close-up portrait, '
-        f'magical glow, detailed and charming\n'
-        f'[4] TRIUMPH: {char_desc} named {name} celebrating victory, wide joyful shot, '
+        f'[1] DISCOVERY: {char_desc} named {name} first enters the magical world, '
+        f'wonder and awe on face, medium shot, soft magical light\n'
+        f'[2] CHALLENGE: {char_desc} named {name} faces the main obstacle or danger, '
+        f'dramatic tense moment, dynamic angle, intense atmosphere\n'
+        f'[3] HELPER: magical {animal} as companion, expressive close-up portrait, '
+        f'magical glow, beautifully detailed, charming and friendly\n'
+        f'[4] ADVENTURE: {char_desc} named {name} and magical {animal} exploring together, '
+        f'over-the-shoulder view, magical landscape ahead, sense of wonder\n'
+        f'[5] MOMENT: {char_desc} named {name} using their special skill ({hobby}) as magic, '
+        f'creative and focused, warm light, medium shot\n'
+        f'[6] JOURNEY: transitional scene, magical path or landscape from the story, '
+        f'atmospheric, hints of {color} colors, no characters, beautiful details\n'
+        f'[7] TRIUMPH: {char_desc} named {name} celebrating final victory, wide joyful shot, '
         f'warm golden light, triumphant expression, {animal} nearby\n'
-        'Все 5 промптов ВИЗУАЛЬНО РАЗНЫЕ: разные планы, освещение, акценты.\n'
-        'В КАЖДЫЙ промпт добавляй в конце: "children\'s book illustration, watercolor style, warm colors, safe for children, no text, no watermark"'
+        'Все 8 промптов ВИЗУАЛЬНО РАЗНЫЕ: разные планы, освещение, акценты.\n'
+        'В КАЖДЫЙ промпт добавляй в конце: "children\'s book illustration, watercolor style, warm colors, safe for children, no text, no watermark"\n\n'
+        'ГРАММАТИКА РУССКОГО ЯЗЫКА — ОБЯЗАТЕЛЬНО:\n'
+        'Все имена персонажей должны соответствовать правилам русского языка.\n'
+        'Прилагательные согласуются с родом существительного: "Звёздное Сияние" (ср.р.), '
+        '"Золотой Ветер" (м.р.), "Серебряная Река" (ж.р.).\n'
+        'НЕ используй конструкции типа "Звездный Сияние" — это грамматическая ошибка!'
     )
 
 
@@ -358,5 +376,6 @@ def generate_story_payload(payload: dict) -> dict:
         raise ValueError(f'Unsupported text provider: {provider}')
 
     story = _strip_english_style_words(result['story_text'])
+    story = _strip_all_english_words(story)
     result['story_text'] = story
     return result
