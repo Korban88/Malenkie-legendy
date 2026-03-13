@@ -29,6 +29,12 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         child = db.get(Child, payload['child_id'])
         if not child:
             raise ValueError('Child not found')
+        # Update preferences if provided for existing child
+        for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
+            val = payload.get(field)
+            if val:
+                setattr(child, field, val)
+        db.flush()
         return child
 
     if not payload.get('child_name') or not payload.get('age'):
@@ -42,6 +48,12 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         )
     )
     if existing_child:
+        # Update preferences if provided
+        for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
+            val = payload.get(field)
+            if val:
+                setattr(existing_child, field, val)
+        db.flush()
         return existing_child
 
     child = Child(
@@ -52,6 +64,10 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         preferred_style=payload.get('style', 'auto'),
         parent_note=payload.get('parent_note'),
         photo_consent=payload.get('photo_consent', False),
+        favorite_animal=payload.get('favorite_animal'),
+        favorite_color=payload.get('favorite_color'),
+        hobby=payload.get('hobby'),
+        favorite_place=payload.get('favorite_place'),
     )
     db.add(child)
     db.flush()
@@ -70,7 +86,10 @@ def generate_story(db: Session, payload: dict) -> Story:
         return existing
 
     latest_story = db.scalar(
-        select(Story).where(Story.child_id == child.id, Story.status == 'ready').order_by(desc(Story.episode_number)).limit(1)
+        select(Story)
+        .where(Story.child_id == child.id, Story.status == 'ready')
+        .order_by(desc(Story.episode_number))
+        .limit(1)
     )
     previous_memory = latest_story.memory if latest_story else {}
     previous_recap = latest_story.recap if latest_story else []
@@ -98,6 +117,11 @@ def generate_story(db: Session, payload: dict) -> Story:
                 'parent_note': payload.get('parent_note') or child.parent_note,
                 'previous_memory': previous_memory,
                 'previous_recap': previous_recap,
+                # Child preferences for personalization
+                'favorite_animal': child.favorite_animal or payload.get('favorite_animal') or 'кот',
+                'favorite_color': child.favorite_color or payload.get('favorite_color') or 'синий',
+                'hobby': child.hobby or payload.get('hobby') or 'рисование',
+                'favorite_place': child.favorite_place or payload.get('favorite_place') or 'лес',
             }
         )
 
@@ -109,14 +133,21 @@ def generate_story(db: Session, payload: dict) -> Story:
                 age=child.age,
                 style=style,
                 photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
-                count=3,
+                scene_prompts=text_payload.get('image_prompts', []),
+                count=5,
             )
             if photo_hash:
                 child.photo_hash = photo_hash
         except Exception as img_exc:
             story.error_message = f'images_failed: {img_exc}'
 
-        pdf_url = generate_pdf(text_payload['title'], text_payload['story_text'], images_urls)
+        pdf_url = generate_pdf(
+            title=text_payload['title'],
+            story_text=text_payload['story_text'],
+            image_urls=images_urls,
+            episode_number=episode_number,
+            child_name=child.name,
+        )
 
         story.title = text_payload['title']
         story.story_text = text_payload['story_text']

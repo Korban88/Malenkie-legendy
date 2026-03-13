@@ -28,6 +28,10 @@ class Child(Base):
     parent_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_consent: Mapped[bool] = mapped_column(Boolean, default=False)
     photo_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    favorite_animal: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    favorite_color: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    hobby: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    favorite_place: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

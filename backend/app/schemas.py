@@ -15,6 +15,10 @@ class StoryGenerateRequest(BaseModel):
     photo_consent: bool = False
     order_id: int | None = None
     episode_number: int | None = None
+    favorite_animal: str | None = None
+    favorite_color: str | None = None
+    hobby: str | None = None
+    favorite_place: str | None = None
 
 
 class StoryGenerateResponse(BaseModel):
