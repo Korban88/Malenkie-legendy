@@ -49,6 +49,33 @@ IMG_BRD_R, IMG_BRD_G, IMG_BRD_B = 160, 110, 50  # image frame
 HOOK_BG_R, HOOK_BG_G, HOOK_BG_B = 245, 230, 205  # next-hook box background
 
 
+def _to_genitive(name: str) -> str:
+    """Convert Russian first name to genitive case (approximation)."""
+    if not name:
+        return name
+    n = name.strip()
+    if len(n) < 2:
+        return n
+    last = n[-1].lower()
+    # Female names ending in 'а': Соня→Сони, Маша→Маши, Катя→Кати
+    if last == 'а':
+        return n[:-1] + 'и'
+    # Names ending in 'я': Коля→Коли, Петя→Пети
+    if last == 'я':
+        return n[:-1] + 'и'
+    # Male names ending in 'й': Андрей→Андрея, Николай→Николая
+    if last == 'й':
+        return n[:-1] + 'я'
+    # Names ending in soft sign 'ь': Игорь→Игоря
+    if last == 'ь':
+        return n[:-1] + 'я'
+    # Male names ending in consonant: Иван→Ивана, Максим→Максима
+    consonants = 'бвгджзклмнпрстфхцчшщ'
+    if last in consonants:
+        return n + 'а'
+    return n
+
+
 def _find_font(candidates: list[str], label: str) -> str:
     for path in candidates:
         if Path(path).exists():
@@ -118,34 +145,38 @@ def _draw_running_header(pdf: FPDF, title: str) -> None:
     pdf.line(MARGIN_OUTER, y, PAGE_W - MARGIN_OUTER, y)
 
 
-def _draw_chapter_image(pdf: FPDF, img_path: Path) -> None:
-    """Draw a full-width illustration right after chapter header."""
-    img_w = CONTENT_W
-    img_h = 90
-    img_x = MARGIN_OUTER
-    iy = pdf.get_y() + 3
-    frame_pad = 2
-
-    # Double frame
+def _draw_framed_image(pdf: FPDF, img_path: Path, x: float, y: float,
+                       w: float, h: float, frame_pad: float = 2.0) -> None:
+    """Draw an image with decorative double frame."""
     pdf.set_draw_color(IMG_BRD_R, IMG_BRD_G, IMG_BRD_B)
     pdf.set_line_width(0.8)
-    pdf.rect(img_x - frame_pad, iy - frame_pad, img_w + frame_pad * 2, img_h + frame_pad * 2)
+    pdf.rect(x - frame_pad, y - frame_pad, w + frame_pad * 2, h + frame_pad * 2)
     pdf.set_line_width(0.2)
-    pdf.rect(img_x - frame_pad - 2, iy - frame_pad - 2,
-             img_w + (frame_pad + 2) * 2, img_h + (frame_pad + 2) * 2)
-
+    pdf.rect(x - frame_pad - 2, y - frame_pad - 2,
+             w + (frame_pad + 2) * 2, h + (frame_pad + 2) * 2)
     try:
-        pdf.image(str(img_path), x=img_x, y=iy, w=img_w, h=img_h)
+        pdf.image(str(img_path), x=x, y=y, w=w, h=h)
     except Exception as e:
-        logger.warning('Chapter image render failed: %s', e)
+        logger.warning('Image render failed: %s', e)
 
-    pdf.set_y(iy + img_h + frame_pad + 8)
+
+def _draw_square_image(pdf: FPDF, img_path: Path, size: float = 110,
+                       centered: bool = True) -> None:
+    """Draw a square illustration, advancing the Y cursor."""
+    img_x = (PAGE_W - size) / 2 if centered else MARGIN_OUTER
+    iy = pdf.get_y() + 3
+    _draw_framed_image(pdf, img_path, img_x, iy, size, size)
+    pdf.set_y(iy + size + 2 + 8)
+
+
+def _draw_chapter_image(pdf: FPDF, img_path: Path) -> None:
+    """Draw a square illustration right after chapter header."""
+    _draw_square_image(pdf, img_path, size=110, centered=True)
 
 
 def _draw_hook_box(pdf: FPDF, hook_text: str) -> None:
     """Draw the cliffhanger/next-episode teaser in a decorative box."""
     pdf.set_font('DejaVu', style='', size=10)
-    # Measure height
     lines = pdf.multi_cell(CONTENT_W - 12, 7, hook_text, align='C',
                            dry_run=True, output='LINES',
                            new_x='LMARGIN', new_y='NEXT')
@@ -154,17 +185,14 @@ def _draw_hook_box(pdf: FPDF, hook_text: str) -> None:
 
     bx = MARGIN_OUTER
     by = pdf.get_y() + 4
-    # Background
     pdf.set_fill_color(HOOK_BG_R, HOOK_BG_G, HOOK_BG_B)
     pdf.rect(bx, by, CONTENT_W, box_h, style='F')
-    # Border
     pdf.set_draw_color(ACC_R, ACC_G, ACC_B)
     pdf.set_line_width(0.6)
     pdf.rect(bx, by, CONTENT_W, box_h)
     pdf.set_line_width(0.2)
     pdf.rect(bx + 2, by + 2, CONTENT_W - 4, box_h - 4)
 
-    # Label
     pdf.set_y(by + 5)
     pdf.set_font('DejaVu', style='B', size=8)
     pdf.set_text_color(ACC_R, ACC_G, ACC_B)
@@ -172,7 +200,6 @@ def _draw_hook_box(pdf: FPDF, hook_text: str) -> None:
     pdf.cell(CONTENT_W, 5, '✦  Что будет в следующий раз...  ✦', align='C')
     pdf.ln(5)
 
-    # Hook text
     pdf.set_font('DejaVu', style='I', size=10)
     pdf.set_text_color(TTL_R, TTL_G, TTL_B)
     pdf.set_x(MARGIN_OUTER + 6)
@@ -207,42 +234,63 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         for url in image_urls:
             local_images.append(_url_to_local_path(url))
 
+        # Cover image: index 0 (world establishing shot)
+        cover_img = local_images[0] if local_images else None
+        # Final illustration: last image (triumph/celebration shot)
+        final_img = local_images[-1] if local_images else None
+
         # ── PAGE 1: Cover ─────────────────────────────────────────────────
         pdf.add_page()
         _fill_bg(pdf)
         _draw_corner_ornaments(pdf, margin=12, size=12)
 
-        pdf.set_y(35)
+        # Series label
+        pdf.set_y(18)
         pdf.set_font('DejaVu', style='I', size=10)
         pdf.set_text_color(RHD_R, RHD_G, RHD_B)
         pdf.set_x(MARGIN_OUTER)
         pdf.multi_cell(CONTENT_W, 7, 'Маленькие легенды', align='C', new_x='LMARGIN', new_y='NEXT')
 
         pdf.set_draw_color(ACC_R, ACC_G, ACC_B)
-        pdf.set_line_width(0.6)
+        pdf.set_line_width(0.4)
         cx = PAGE_W / 2
         y0 = pdf.get_y() + 2
         pdf.line(cx - 50, y0, cx + 50, y0)
-        pdf.ln(10)
+        pdf.set_y(y0 + 6)
 
         if episode_number > 1:
             pdf.set_font('DejaVu', style='', size=9)
             pdf.set_text_color(ACC_R, ACC_G, ACC_B)
             pdf.set_x(MARGIN_OUTER)
-            pdf.multi_cell(CONTENT_W, 6, f'✦  Эпизод {episode_number}  ✦', align='C', new_x='LMARGIN', new_y='NEXT')
+            pdf.multi_cell(CONTENT_W, 6, f'✦  Эпизод {episode_number}  ✦', align='C',
+                           new_x='LMARGIN', new_y='NEXT')
             pdf.ln(4)
 
-        pdf.set_font('DejaVu', style='B', size=28)
+        # Cover illustration — large centered square
+        if cover_img:
+            cov_size = 138
+            cov_x = (PAGE_W - cov_size) / 2
+            cov_y = pdf.get_y() + 2
+            _draw_framed_image(pdf, cover_img, cov_x, cov_y, cov_size, cov_size, frame_pad=3)
+            pdf.set_y(cov_y + cov_size + 3 + 10)
+        else:
+            pdf.ln(30)
+
+        # Title
+        pdf.set_font('DejaVu', style='B', size=24)
         pdf.set_text_color(TTL_R, TTL_G, TTL_B)
         pdf.set_x(MARGIN_OUTER)
-        pdf.multi_cell(CONTENT_W, 15, title, align='C', new_x='LMARGIN', new_y='NEXT')
-        pdf.ln(12)
+        pdf.multi_cell(CONTENT_W, 13, title, align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.ln(8)
 
         _draw_ornament_divider(pdf)
+
+        # Dedication with correct genitive case
+        name_gen = _to_genitive(child_name) if child_name else ''
+        dedication = f'Персональная сказка для {name_gen}' if name_gen else 'Персональная сказка'
         pdf.set_font('DejaVu', style='I', size=9.5)
         pdf.set_text_color(RHD_R, RHD_G, RHD_B)
         pdf.set_x(MARGIN_OUTER)
-        dedication = f'Персональная сказка для {child_name}' if child_name else 'Персональная сказка'
         pdf.multi_cell(CONTENT_W, 6, dedication, align='C', new_x='LMARGIN', new_y='NEXT')
         pdf.ln(3)
         pdf.set_font('DejaVu', style='', size=8)
@@ -253,26 +301,22 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         # ── Story pages ───────────────────────────────────────────────────
         paragraphs = [p.strip() for p in story_text.split('\n\n') if p.strip()]
 
-        # Split into chapter blocks: list of (chapter_title, [paragraphs], image_or_None)
-        chapters: list[tuple[str, list[str], Path | None]] = []
+        # Split into chapter blocks
+        chapters: list[tuple[str, list[str]]] = []
         current_chapter_title = ''
         current_paras: list[str] = []
 
         for para in paragraphs:
             if para.startswith('Глава'):
                 if current_chapter_title or current_paras:
-                    # Assign image: chapter index matches local_images index
-                    img = local_images[len(chapters)] if len(chapters) < len(local_images) else None
-                    chapters.append((current_chapter_title, current_paras, img))
+                    chapters.append((current_chapter_title, current_paras))
                 current_chapter_title = para
                 current_paras = []
             else:
                 current_paras.append(para)
 
-        # Last chapter
         if current_chapter_title or current_paras:
-            img = local_images[len(chapters)] if len(chapters) < len(local_images) else None
-            chapters.append((current_chapter_title, current_paras, img))
+            chapters.append((current_chapter_title, current_paras))
 
         page_num = 1
 
@@ -292,9 +336,11 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         def space_left() -> float:
             return content_bottom() - pdf.get_y()
 
-        for chapter_title, paras, chapter_img in chapters:
+        for ch_idx, (chapter_title, paras) in enumerate(chapters):
             # Each chapter starts on a new page
             new_story_page()
+            # Reset body color after running header drawing
+            pdf.set_text_color(BODY_R, BODY_G, BODY_B)
 
             # Chapter header band
             if chapter_title:
@@ -314,15 +360,14 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 pdf.multi_cell(CONTENT_W, 8, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
                 pdf.set_y(by + band_h + 4)
 
-            # Chapter illustration right after header
-            if chapter_img:
-                _draw_chapter_image(pdf, chapter_img)
+            # Chapter illustration: chapters[0]→img[1], chapters[1]→img[2], etc.
+            # img[0] is reserved for cover; img[4] reserved for final page
+            ch_img_idx = ch_idx + 1
+            if ch_img_idx < len(local_images) and ch_img_idx < 4 and local_images[ch_img_idx]:
+                _draw_chapter_image(pdf, local_images[ch_img_idx])
 
             # Body paragraphs
             for para in paras:
-                pdf.set_font('DejaVu', style='', size=11)
-                pdf.set_text_color(BODY_R, BODY_G, BODY_B)
-
                 lines = pdf.multi_cell(CONTENT_W, 6.8, para, align='J',
                                        new_x='LMARGIN', new_y='NEXT', dry_run=True, output='LINES')
                 text_h = len(lines) * 6.8 + 4
@@ -330,6 +375,9 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 if space_left() < text_h:
                     new_story_page()
 
+                # Always reset font and color right before rendering text
+                pdf.set_font('DejaVu', style='', size=11)
+                pdf.set_text_color(BODY_R, BODY_G, BODY_B)
                 pdf.set_x(MARGIN_OUTER)
                 pdf.multi_cell(CONTENT_W, 6.8, para, align='J', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
@@ -339,6 +387,15 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             if space_left() < 60:
                 new_story_page()
             _draw_hook_box(pdf, next_hook)
+
+        # ── Final illustration (triumph / closing scene) ──────────────────
+        if final_img:
+            needed = 120
+            if space_left() < needed:
+                new_story_page()
+            pdf.ln(4)
+            _draw_square_image(pdf, final_img, size=100, centered=True)
+            pdf.set_text_color(BODY_R, BODY_G, BODY_B)
 
         # ── "The End" ─────────────────────────────────────────────────────
         if space_left() < 25:

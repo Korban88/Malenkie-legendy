@@ -91,6 +91,9 @@ def _prompt(payload: dict) -> str:
     else:
         continuation_block = f'Первый эпизод серии. Создай уникальный волшебный мир с именем (world_name).\n'
 
+    # Fixed character description for visual consistency across all illustrations
+    char_desc = f'{age}-year-old {gender_word}, warm adventure clothes, expressive face'
+
     return (
         'Ты мастер детской литературы мирового уровня. '
         'Твоя задача — создать персональную сказку, сочетающую лучшее от великих авторов: '
@@ -106,28 +109,37 @@ def _prompt(payload: dict) -> str:
         f'ГЕРОЙ: {name}, {age} лет. {gender_hint}\n'
         f'СТИЛЬ: {style_ru}. ЭПИЗОД №{episode}.\n\n'
         f'{continuation_block}\n'
-        f'ПРЕДПОЧТЕНИЯ РЕБЁНКА (ОБЯЗАТЕЛЬНО включи в сюжет — это создаёт вау-эффект!):\n'
-        f'• Любимое животное: "{animal}" — должно стать ключевым персонажем или волшебным союзником\n'
-        f'• Любимый цвет: "{color}" — используй в описаниях магии, одежды, волшебных предметов\n'
-        f'• Любимое занятие: "{hobby}" — покажи как особую способность или суперсилу героя в нужный момент\n'
-        f'• Любимое место: "{place}" — там происходит важнейшее событие сказки\n\n'
+        f'ПРЕДПОЧТЕНИЯ РЕБЁНКА — ЭТО САМОЕ ВАЖНОЕ! Каждый из четырёх пунктов ОБЯЗАН играть ключевую сюжетную роль:\n'
+        f'• Любимое животное: "{animal}" — ОБЯЗАТЕЛЬНО должно стать главным волшебным союзником или ключевым персонажем. '
+        f'Называй его "{animal}" в тексте, дай ему имя, характер, реплики. НЕ ЗАМЕНЯЙ другим животным!\n'
+        f'• Любимый цвет: "{color}" — используй в описаниях магии, одежды, волшебных предметов не менее 5 раз\n'
+        f'• Любимое занятие: "{hobby}" — покажи как особую способность или суперсилу героя в кульминационный момент\n'
+        f'• Любимое место: "{place}" — там происходит главное событие сказки, опиши его подробно\n\n'
         f'ПОЖЕЛАНИЕ РОДИТЕЛЯ: {parent_note}\n\n'
         'ТРЕБОВАНИЯ К ТЕКСТУ:\n'
-        '1) story_text — СТРОГО 7000–9000 символов (полноценная сказка на 15–20 минут чтения вслух)\n'
+        '1) story_text — СТРОГО 7500–9000 символов. Считай символы! Сказка должна занимать минимум 15 минут чтения вслух.\n'
+        '   Каждая глава — минимум 4–6 абзацев по 3–5 предложений. НЕ СОКРАЩАЙ!\n'
         '2) Структура: яркое начало (захватывает с первой фразы) → 4–5 развёрнутых приключений '
         '→ кульминация (самый напряжённый момент) → развязка с ненавязчивой моралью\n'
         '3) Каждая глава начинается с "Глава [порядковый номер словами]. [Название]"\n'
-        '4) Диалоги живые, с характером персонажей, через тире; минимум 10–12 реплик\n'
-        '5) Все четыре предпочтения ребёнка играют сюжетную роль — не просто упоминаются\n'
+        '4) Диалоги живые, с характером персонажей, через тире; минимум 12–15 реплик\n'
+        f'5) Любимое животное "{animal}" должно присутствовать в сюжете от начала до конца\n'
         '6) Герой проявляет настоящий характер: смелость, доброту, смекалку, иногда страх или сомнение\n'
         '7) Текст разбит на абзацы двойным переносом строки \\n\\n\n\n'
-        'ТРЕБОВАНИЯ К IMAGE PROMPTS (5 штук на английском, 18–25 слов каждый):\n'
-        f'[0] WORLD SHOT: atmospheric panoramic view of the magical world/location — NO characters, wide establishing shot, rich details\n'
-        f'[1] DISCOVERY: {age}-year-old {gender_word} named {name} discovering something magical for the first time, wonder on face, medium shot\n'
-        f'[2] CHALLENGE: dramatic tense moment, the main obstacle or danger, dynamic angle, intense atmosphere\n'
-        f'[3] HELPER: {animal} as magical companion or ally, expressive close-up, magical glow, detailed\n'
-        f'[4] TRIUMPH: {name} celebrating victory, wide joyful shot, warm golden light, triumphant expression\n'
-        'Все 5 промптов ВИЗУАЛЬНО РАЗНЫЕ: разные планы, освещение, акценты. Добавляй: "children\'s book illustration, watercolor style, warm colors, safe for children, no text"'
+        'ТРЕБОВАНИЯ К IMAGE PROMPTS (5 штук на английском, 20–28 слов каждый):\n'
+        f'CHARACTER APPEARANCE для промптов [1],[2],[4]: используй ТОЧНО ТАКОЕ описание: "{char_desc}"\n'
+        f'[0] WORLD SHOT: atmospheric panoramic view of the magical {place}, NO characters visible, '
+        f'wide establishing shot, rich details, enchanted atmosphere\n'
+        f'[1] DISCOVERY: {char_desc} named {name} discovering something magical for the first time, '
+        f'wonder on face, medium shot, soft light\n'
+        f'[2] CHALLENGE: {char_desc} named {name}, dramatic tense moment facing the main obstacle, '
+        f'dynamic angle, intense atmosphere\n'
+        f'[3] HELPER: magical {animal} as companion or ally, expressive close-up portrait, '
+        f'magical glow, detailed and charming\n'
+        f'[4] TRIUMPH: {char_desc} named {name} celebrating victory, wide joyful shot, '
+        f'warm golden light, triumphant expression, {animal} nearby\n'
+        'Все 5 промптов ВИЗУАЛЬНО РАЗНЫЕ: разные планы, освещение, акценты.\n'
+        'В КАЖДЫЙ промпт добавляй в конце: "children\'s book illustration, watercolor style, warm colors, safe for children, no text, no watermark"'
     )
 
 
@@ -145,7 +157,7 @@ def _call_openrouter(payload: dict) -> dict:
             'model': settings.openrouter_model,
             'messages': [{'role': 'user', 'content': _prompt(payload)}],
             'temperature': 0.85,
-            'max_tokens': 6000,
+            'max_tokens': 8000,
             'response_format': {'type': 'json_object'},
         },
         timeout=120,
