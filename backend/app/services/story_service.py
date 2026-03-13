@@ -147,6 +147,7 @@ def generate_story(db: Session, payload: dict) -> Story:
             image_urls=images_urls,
             episode_number=episode_number,
             child_name=child.name,
+            next_hook=text_payload.get('next_hook', ''),
         )
 
         story.title = text_payload['title']

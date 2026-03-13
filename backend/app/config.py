@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     openrouter_model: str = 'openai/gpt-4o-mini'
     backup_text_provider: str = 'template'
 
-    image_provider: str = 'stability'
+    openai_api_key: str = ''
+
+    image_provider: str = 'openai'
     stability_api_key: str = ''
     backup_image_provider: str = 'pollinations'
 
