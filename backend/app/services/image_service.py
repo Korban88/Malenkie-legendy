@@ -24,17 +24,19 @@ _SHOT_MODIFIERS = [
 
 # Image style presets — maps image_style key to DALL-E prompt suffix
 _IMG_STYLE_SUFFIX = {
-    'ghibli':     'Studio Ghibli style, soft hand-painted watercolor, anime-inspired, gentle whimsical atmosphere',
-    'disney':     'Disney fairy tale style, vibrant cheerful colors, cute rounded characters, magical sparkles',
-    'pixar':      'Pixar 3D animation style, richly detailed, warm cinematic lighting, expressive characters',
-    'watercolor': 'soft watercolor illustration, dreamy pastel tones, gentle brushstrokes, traditional art',
-    'cartoon':    'cartoon illustration, bold black outlines, bright saturated colors, playful fun style',
-    'storybook':  "classic children's storybook illustration, detailed ink and watercolor, warm cozy feeling",
+    'ghibli':     'Studio Ghibli style exactly as in My Neighbor Totoro, Hayao Miyazaki signature soft hand-painted watercolor, gentle rounded shapes, muted natural palette, warm luminous backgrounds',
+    'soviet':     'Soviet Soyuzmultfilm animation style, exactly like Cheburashka and Crocodile Gena 1966, classic USSR cartoon, simple clean outlines with thick borders, warm muted earthy palette, flat 2D nostalgia, 1970s animation aesthetic',
+    'pixar':      'Pixar 3D animation style exactly as in Toy Story and Up, richly detailed subsurface scattering skin, warm cinematic rim lighting, expressive rounded characters',
+    'watercolor': 'soft traditional watercolor illustration, dreamy pastel tones, visible gentle brushstrokes, wet-on-wet blending, white paper showing through, loose artistic style',
+    'cartoon':    'classic cartoon illustration, bold black outlines, bright saturated flat colors, playful fun style, cel-shading',
+    'storybook':  "classic children's storybook illustration, detailed ink-and-watercolor, warm cozy texture, golden-age book art",
 }
 
 _BASE_QUALITY = (
     "children's book illustration, safe for children, no text, no watermark, "
-    "high quality, detailed, professional illustration"
+    "high quality, detailed, professional illustration, "
+    "correct human anatomy, exactly five fingers on each hand, no extra limbs, "
+    "only named characters in scene, no background strangers"
 )
 
 
@@ -73,6 +75,10 @@ def generate_images(
         if settings.keep_uploaded_photo:
             _save_image_bytes(raw_photo, out_dir)
 
+    # Single seed per story for consistent style across all images (Pollinations)
+    import random
+    story_seed = random.randint(10000, 99999)
+
     for i in range(count):
         if scene_prompts and i < len(scene_prompts):
             base_prompt = scene_prompts[i]
@@ -85,7 +91,7 @@ def generate_images(
         prompt = _build_prompt(base_prompt, style, i, image_style)
 
         try:
-            filename = _generate_single(prompt, photo_base64 if i > 0 else None)
+            filename = _generate_single(prompt, photo_base64 if i > 0 else None, seed=story_seed + i)
             urls.append(f'{settings.public_base_url}/files/images/{filename}')
         except Exception:
             pass
@@ -93,7 +99,7 @@ def generate_images(
     return urls, photo_hash
 
 
-def _generate_single(prompt: str, photo_base64: str | None) -> str:
+def _generate_single(prompt: str, photo_base64: str | None, seed: int = 42) -> str:
     provider = settings.image_provider
 
     if provider == 'openai':
@@ -101,7 +107,7 @@ def _generate_single(prompt: str, photo_base64: str | None) -> str:
             return _openai_generate(prompt)
         except Exception:
             if settings.backup_image_provider == 'pollinations':
-                return _pollinations_generate(prompt)
+                return _pollinations_generate(prompt, seed)
             raise
 
     if provider == 'stability':
@@ -109,11 +115,11 @@ def _generate_single(prompt: str, photo_base64: str | None) -> str:
             return _stability_generate(prompt, photo_base64)
         except Exception:
             if settings.backup_image_provider == 'pollinations':
-                return _pollinations_generate(prompt)
+                return _pollinations_generate(prompt, seed)
             raise
 
     if provider == 'pollinations':
-        return _pollinations_generate(prompt)
+        return _pollinations_generate(prompt, seed)
 
     raise ValueError(f'Unsupported image provider: {provider}')
 
@@ -125,11 +131,11 @@ def _openai_generate(prompt: str) -> str:
     from openai import OpenAI
     client = OpenAI(api_key=settings.openai_api_key)
 
+    # dall-e-2: ~$0.020/image vs dall-e-3 $0.040/image — 2x cheaper for mass generation
     response = client.images.generate(
-        model='dall-e-3',
-        prompt=prompt,
+        model='dall-e-2',
+        prompt=prompt[:1000],  # dall-e-2 limit is 1000 chars
         size='1024x1024',
-        quality='standard',
         n=1,
     )
     image_url = response.data[0].url
@@ -173,9 +179,10 @@ def _stability_generate(prompt: str, photo_base64: str | None) -> str:
     return _save_image_bytes(response.content, out_dir)
 
 
-def _pollinations_generate(prompt: str) -> str:
+def _pollinations_generate(prompt: str, seed: int = 42) -> str:
     response = httpx.get(
         'https://image.pollinations.ai/prompt/' + quote(prompt),
+        params={'seed': seed, 'width': 1024, 'height': 1024, 'nologo': 'true'},
         timeout=120,
     )
     response.raise_for_status()

@@ -99,7 +99,14 @@ def _prompt(payload: dict) -> str:
         continuation_block = f'Первый эпизод серии. Создай уникальный волшебный мир с именем (world_name).\n'
 
     # Fixed character description for visual consistency across all illustrations
-    char_desc = f'{age}-year-old {gender_word}, warm adventure clothes, expressive face'
+    # LLM must invent specifics once and reuse them verbatim in all character prompts
+    char_desc = (
+        f'{age}-year-old {gender_word}: invent once and lock — specific hair color & style '
+        f'(e.g. "short dark-brown curly hair"), specific eye color, exact full outfit with colors '
+        f'(e.g. "red-and-white striped sweater, dark blue jeans, orange sneakers with white soles"), '
+        f'one distinctive detail (e.g. "small freckles on nose" or "always wears a yellow cap"). '
+        f'Repeat this EXACT phrase word-for-word in every prompt where the character appears.'
+    )
 
     return (
         'Ты мастер детской литературы мирового уровня. '
@@ -113,6 +120,9 @@ def _prompt(payload: dict) -> str:
         ',"character_traits":{"courage":"...","kindness":"...","special_power":"..."},'
         '"character_level":1,"allies":[],"open_threads":[]},'
         '"next_hook":"..."}\n\n'
+        'next_hook — интригующая фраза 2-3 предложения на русском языке: намёк-загадка на следующее '
+        'приключение + фраза завершения вроде "Но это уже совсем другая история... узнаем в следующей сказке!" '
+        'или "Что же скрывается там? Об этом мы узнаем в следующий раз!"\n\n'
         f'ГЕРОЙ: {name}, {age} лет. {gender_hint}\n'
         f'СТИЛЬ: {style_ru}. ЭПИЗОД №{episode}.\n\n'
         f'{continuation_block}\n'
@@ -133,8 +143,13 @@ def _prompt(payload: dict) -> str:
         f'5) Любимое животное "{animal}" должно присутствовать в сюжете от начала до конца\n'
         '6) Герой проявляет настоящий характер: смелость, доброту, смекалку, иногда страх или сомнение\n'
         '7) Текст разбит на абзацы двойным переносом строки \\n\\n\n\n'
-        'ТРЕБОВАНИЯ К IMAGE PROMPTS (8 штук на английском, 20–28 слов каждый):\n'
-        f'CHARACTER APPEARANCE — используй ТОЧНО ТАКОЕ описание в промптах [1],[2],[4],[5],[7]: "{char_desc}"\n'
+        'ТРЕБОВАНИЯ К IMAGE PROMPTS (8 штук на английском, 25–35 слов каждый):\n'
+        f'STEP 1 — DEFINE CHARACTER ONCE: using this template — "{char_desc}"\n'
+        'STEP 2 — USE THIS EXACT CHARACTER DESCRIPTION VERBATIM in prompts [1],[2],[4],[5],[7]. '
+        'Do NOT change hair/eyes/outfit between prompts — it must be identical, word for word.\n'
+        'STEP 3 — ANATOMY RULE: every prompt with characters must include '
+        '"correct anatomy, five fingers per hand, no extra limbs, no extra characters".\n'
+        'STEP 4 — STYLE LOCK: all 8 prompts must use the exact same style suffix — do not vary it.\n'
         f'[0] WORLD SHOT: atmospheric panoramic view of the magical {place}, NO characters visible, '
         f'wide establishing shot, rich details, enchanted atmosphere\n'
         f'[1] DISCOVERY: {char_desc} named {name} first enters the magical world, '
@@ -152,7 +167,7 @@ def _prompt(payload: dict) -> str:
         f'[7] TRIUMPH: {char_desc} named {name} celebrating final victory, wide joyful shot, '
         f'warm golden light, triumphant expression, {animal} nearby\n'
         'Все 8 промптов ВИЗУАЛЬНО РАЗНЫЕ: разные планы, освещение, акценты.\n'
-        'В КАЖДЫЙ промпт добавляй в конце: "children\'s book illustration, watercolor style, warm colors, safe for children, no text, no watermark"\n\n'
+        'В КАЖДЫЙ промпт добавляй в конце одинаковый суффикс: "children\'s book illustration, watercolor style, warm colors, safe for children, no text, no watermark, correct anatomy, five fingers per hand, only named characters"\n\n'
         'ГРАММАТИКА РУССКОГО ЯЗЫКА — ОБЯЗАТЕЛЬНО:\n'
         'Все имена персонажей должны соответствовать правилам русского языка.\n'
         'Прилагательные согласуются с родом существительного: "Звёздное Сияние" (ср.р.), '

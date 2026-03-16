@@ -19,6 +19,15 @@ from aiogram.types import (
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8010")
 
+
+def age_word(age: int) -> str:
+    """Правильное склонение: 1 год, 2-4 года, 5+ лет."""
+    if age % 10 == 1 and age % 100 != 11:
+        return f"{age} год"
+    if age % 10 in (2, 3, 4) and age % 100 not in (12, 13, 14):
+        return f"{age} года"
+    return f"{age} лет"
+
 bot = Bot(BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -90,7 +99,7 @@ def kb_img_style() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🌸 Студия Гибли", callback_data="img_style:ghibli"),
         ],
         [
-            InlineKeyboardButton(text="✨ Disney", callback_data="img_style:disney"),
+            InlineKeyboardButton(text="🎭 Советская анимация", callback_data="img_style:soviet"),
             InlineKeyboardButton(text="🎬 Pixar", callback_data="img_style:pixar"),
         ],
         [
@@ -231,7 +240,7 @@ async def cb_age(call: CallbackQuery, state: FSMContext):
     await state.update_data(age=age)
     await call.message.edit_reply_markup(reply_markup=None)
     await call.message.answer(
-        f"Отлично, {age} лет — запомнил! 👶\n\nМальчик или девочка?",
+        f"Отлично, {age_word(age)} — запомнил! 👶\n\nМальчик или девочка?",
         reply_markup=kb_gender(),
     )
     await state.set_state(Form.gender)
@@ -269,7 +278,7 @@ async def cb_style(call: CallbackQuery, state: FSMContext):
         "🖼 Выбери стиль иллюстраций для сказки:\n\n"
         "• 🎨 Акварель — нежная ручная акварель\n"
         "• 🌸 Студия Гибли — аниме, «Мой сосед Тоторо»\n"
-        "• ✨ Disney — яркие волшебные персонажи\n"
+        "• 🎭 Советская анимация — Союзмультфильм, Чебурашка, Простоквашино\n"
         "• 🎬 Pixar — объёмный 3D-мультфильм\n"
         "• 🖍 Мультик — яркий плоский мультяшный стиль\n"
         "• 📖 Книжная — классическая книжная иллюстрация",
@@ -289,7 +298,7 @@ async def cb_img_style(call: CallbackQuery, state: FSMContext):
     style_names = {
         'watercolor': 'Акварель 🎨',
         'ghibli':     'Студия Гибли 🌸',
-        'disney':     'Disney ✨',
+        'soviet':     'Советская анимация 🎭',
         'pixar':      'Pixar 🎬',
         'cartoon':    'Мультик 🖍',
         'storybook':  'Книжная 📖',
@@ -457,7 +466,7 @@ async def _generate(trigger_message: Message, state: FSMContext):
     photo_consent  = data.get("photo_consent", False)
 
     img_style_labels = {
-        'watercolor': 'акварель', 'ghibli': 'Студия Гибли', 'disney': 'Disney',
+        'watercolor': 'акварель', 'ghibli': 'Студия Гибли', 'soviet': 'Советская анимация',
         'pixar': 'Pixar', 'cartoon': 'мультик', 'storybook': 'книжная',
     }
 

@@ -299,13 +299,16 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                            new_x='LMARGIN', new_y='NEXT')
             pdf.ln(4)
 
-        # Cover illustration — large centered square
+        # Cover illustration — frameless, like a watercolor splash
         if cover_img:
-            cov_size = 138
+            cov_size = 142
             cov_x = (PAGE_W - cov_size) / 2
             cov_y = pdf.get_y() + 2
-            _draw_framed_image(pdf, C, cover_img, cov_x, cov_y, cov_size, cov_size, frame_pad=3)
-            pdf.set_y(cov_y + cov_size + 3 + 10)
+            try:
+                pdf.image(str(cover_img), x=cov_x, y=cov_y, w=cov_size, h=cov_size)
+            except Exception as e:
+                logger.warning('Cover image render failed: %s', e)
+            pdf.set_y(cov_y + cov_size + 6)
         else:
             pdf.ln(30)
 
@@ -377,26 +380,14 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         for ch_idx, (chapter_title, paras) in enumerate(chapters):
             new_story_page()
 
-            # Chapter header band with rounded corners
+            # Chapter header — large bold text, no band
             if chapter_title:
-                pdf.set_font('DejaVu', style='B', size=13)
-                lines = pdf.multi_cell(CONTENT_W, 8, chapter_title, align='C',
-                                       new_x='LMARGIN', new_y='NEXT', dry_run=True, output='LINES')
-                band_h = len(lines) * 8 + 12
-                bx = MARGIN_OUTER - 2
-                by = pdf.get_y() - 1
-                bw = CONTENT_W + 4
-                pdf.set_fill_color(hr2, hg2, hb2)
-                try:
-                    pdf.rect(bx, by, bw, band_h, style='F', round_corners=True, corner_radius=4)
-                except TypeError:
-                    pdf.rect(bx, by, bw, band_h, style='F')
-                pdf.set_y(by + 5)
-                pdf.set_font('DejaVu', style='B', size=13)
-                pdf.set_text_color(ht_r, ht_g, ht_b)
+                pdf.ln(2)
+                pdf.set_font('DejaVu', style='B', size=16)
+                pdf.set_text_color(tr, tg, tb)
                 pdf.set_x(MARGIN_OUTER)
-                pdf.multi_cell(CONTENT_W, 8, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
-                pdf.set_y(by + band_h + 4)
+                pdf.multi_cell(CONTENT_W, 10, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
+                pdf.ln(4)
 
             # Chapter illustration: chapter[0]→img[1], chapter[1]→img[2], etc.
             ch_img = chapter_imgs[ch_idx] if ch_idx < len(chapter_imgs) else None
@@ -439,13 +430,20 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             pdf.set_text_color(br, bg, bb)
 
         # ── "The End" ─────────────────────────────────────────────────────
-        if space_left() < 25:
+        if space_left() < 40:
             new_story_page()
         _draw_ornament_divider(pdf, C)
-        pdf.set_font('DejaVu', style='B', size=12)
+        pdf.set_font('DejaVu', style='B', size=22)
         pdf.set_text_color(tr, tg, tb)
         pdf.set_x(MARGIN_OUTER)
-        pdf.multi_cell(CONTENT_W, 8, '✦  Конец  ✦', align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.multi_cell(CONTENT_W, 14, '✦  Конец  ✦', align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.ln(6)
+        farewell_name = child_name if child_name else ''
+        farewell = f'{farewell_name}, до встречи в будущих приключениях!' if farewell_name else 'До встречи в будущих приключениях!'
+        pdf.set_font('DejaVu', style='I', size=11)
+        pdf.set_text_color(rr, rg, rb)
+        pdf.set_x(MARGIN_OUTER)
+        pdf.multi_cell(CONTENT_W, 7, farewell, align='C', new_x='LMARGIN', new_y='NEXT')
 
         pdf.output(str(full_path))
         logger.info('PDF generated: %s (%d bytes, %d pages)', filename, full_path.stat().st_size, page_num)
