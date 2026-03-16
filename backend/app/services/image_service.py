@@ -22,12 +22,14 @@ _IMG_STYLE_SUFFIX = {
 
 _BASE_QUALITY = (
     "children's book illustration, safe for children, no text, no watermark, "
+    "wide establishing shot, full body characters visible in scene, "
     "high quality, detailed, professional illustration, "
     "correct human anatomy, exactly five fingers on each hand, no extra limbs, only named characters in scene"
 )
 
 # Artifacts to avoid in human characters
 _NEGATIVE_PROMPT = (
+    'close-up portrait, headshot, face only, head only, bust portrait, extreme close-up, '
     'beard, mustache, goatee, facial hair, stubble on child, '
     'tails on humans, animal features on human characters, extra limbs, deformed hands, '
     'extra fingers, six fingers, mutated body, bad anatomy, disfigured, '
@@ -45,11 +47,14 @@ def _save_image_bytes(data: bytes, out_dir: Path) -> str:
     return filename
 
 
-def _build_prompt(scene_prompt: str, image_style: str = 'watercolor') -> str:
-    """Build final prompt: style FIRST so DALL-E applies it consistently."""
+def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'watercolor') -> str:
+    """Build final prompt: style FIRST, then SCENE ACTION, then character description."""
     style = _IMG_STYLE_SUFFIX.get(image_style, _IMG_STYLE_SUFFIX['watercolor'])
-    # Style goes first — DALL-E weights the beginning of the prompt most heavily
-    base = f"{style}. {scene_prompt}. {_BASE_QUALITY}"
+    # Scene/action first — composition before character details prevents face close-ups
+    if char_desc:
+        base = f"{style}. {scene_prompt}. The main character is {char_desc}. {_BASE_QUALITY}"
+    else:
+        base = f"{style}. {scene_prompt}. {_BASE_QUALITY}"
     return base[:1200]
 
 
@@ -66,13 +71,10 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
     for i in range(count):
         if scene_prompts and i < len(scene_prompts):
             scene = scene_prompts[i]
-            # Prepend locked character description to every scene for visual consistency
-            base_prompt = f"{char_desc}. {scene}" if char_desc else scene
         else:
-            base_prompt = (f"{char_desc}. " if char_desc else "") + (
-                f"{age}-year-old child named {child_name} in {style} fairy tale scene {i + 1}"
-            )
-        prompt = _build_prompt(base_prompt, image_style)
+            scene = f"{age}-year-old child named {child_name} in {style} fairy tale scene {i + 1}"
+        # char_desc passed separately so scene action comes first in the prompt
+        prompt = _build_prompt(scene, char_desc, image_style)
         try:
             filename = _generate_single(prompt, photo_base64 if i > 0 else None)
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
@@ -109,7 +111,7 @@ def _openai_generate(prompt):
     client = OpenAI(api_key=settings.openai_api_key)
     # Use landscape format for wide page layout
     response = client.images.generate(
-        model='dall-e-2', prompt=prompt[:1000], size='1024x1024', n=1
+        model='dall-e-3', prompt=prompt[:4000], size='1024x1024', quality='standard', n=1
     )
     image_url = response.data[0].url
     img_response = httpx.get(image_url, timeout=60)
@@ -157,7 +159,7 @@ def _pollinations_generate(prompt):
     # Use landscape 16:9 format and add negative prompt support
     encoded = quote(prompt)
     encoded_neg = quote(_NEGATIVE_PROMPT)
-    url = f'https://image.pollinations.ai/prompt/{encoded}?width=1280&height=720&nologo=true&negative={encoded_neg}'
+    url = f'https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&negative={encoded_neg}&model=flux'
     response = httpx.get(url, timeout=120)
     response.raise_for_status()
     return _save_image_bytes(response.content, Path(settings.images_dir))

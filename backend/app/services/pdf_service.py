@@ -309,10 +309,9 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         def _img(idx: int) -> Path | None:
             return local_images[idx] if idx < len(local_images) else None
 
-        # Image slots: [0]=cover, [1-3]=chapters 1-3, [4]=final
+        # Image slots: [0]=cover, [1-5]=one per chapter (5 chapters)
         cover_img    = _img(0)
-        chapter_imgs = [_img(i) for i in range(1, 4)]   # chapters 0-2 (indices 1,2,3)
-        final_img    = _img(4)
+        chapter_imgs = [_img(i) for i in range(1, 6)]   # one image per chapter
 
         rr, rg, rb = C['RHD']
         ar, ag, ab = C['ACC']
@@ -425,17 +424,17 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         for ch_idx, (chapter_title, paras) in enumerate(chapters):
             new_story_page()
 
-            # Chapter header band
+            # Chapter header
             if chapter_title:
-                pdf.ln(2)
+                pdf.ln(8)
                 if has_fairy:
-                    pdf.set_font('Fairy', style='', size=17)
+                    pdf.set_font('Fairy', style='', size=19)
                 else:
-                    pdf.set_font('DejaVu', style='B', size=17)
+                    pdf.set_font('DejaVu', style='B', size=19)
                 pdf.set_text_color(tr, tg, tb)
                 pdf.set_x(MARGIN_OUTER)
-                pdf.multi_cell(CONTENT_W, 11, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
-                pdf.ln(4)
+                pdf.multi_cell(CONTENT_W, 12, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
+                pdf.ln(8)
 
             # ── Chapter image: ONE unique image per chapter, shown ONCE ───────
             # chapter[0]→img[1], chapter[1]→img[2], ..., chapter[4]→img[5]
@@ -449,16 +448,18 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
 
             # Body paragraphs — continuation pages get NO image (pure text)
             for para in paras:
+                # Set body font BEFORE dry_run so line-count estimate matches actual render font
+                pdf.set_font('DejaVu', style='', size=11)
+                pdf.set_text_color(br, bg, bb)
                 lines = pdf.multi_cell(CONTENT_W, 6.8, para, align='J',
                                        new_x='LMARGIN', new_y='NEXT', dry_run=True, output='LINES')
                 text_h = len(lines) * 6.8 + 4
 
                 if space_left() < text_h:
                     new_story_page()
-                    # NO overflow image — continuation pages are text only
+                    pdf.set_font('DejaVu', style='', size=11)
+                    pdf.set_text_color(br, bg, bb)
 
-                pdf.set_font('DejaVu', style='', size=11)
-                pdf.set_text_color(br, bg, bb)
                 pdf.set_x(MARGIN_OUTER)
                 pdf.multi_cell(CONTENT_W, 6.8, para, align='J', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
@@ -468,13 +469,6 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             if space_left() < 60:
                 new_story_page()
             _draw_hook_box(pdf, C, next_hook)
-
-        # ── Final illustration ────────────────────────────────────────────────
-        if final_img:
-            if space_left() < IMG_TOTAL:
-                new_story_page()
-            pdf.ln(4)
-            _draw_wide_image(pdf, C, final_img)
 
         # ── "The End" ─────────────────────────────────────────────────────────
         if space_left() < 45:
