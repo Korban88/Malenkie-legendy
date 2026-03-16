@@ -25,11 +25,161 @@ STYLE_NAMES_RU = {
     'epic':      'эпический (как у Корнелии Функе)',
 }
 
+# Literary guides per style — injected into the prompt
+_STYLE_LITERARY_GUIDES = {
+    'magical': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — волшебный стиль:\n'
+        '• Астрид Линдгрен: герой делает невозможное с полной серьёзностью; юмор возникает из столкновения детской логики и мира взрослых\n'
+        '• Льюис Кэрролл: логика волшебного мира внутренне последовательна — правила странные, но они соблюдаются строго\n'
+        '• Туве Янссон: за уютом прячется тихая тревога; опасность встречается с достоинством, не с паникой\n'
+        'ТЕХНИКА: неожиданное решение — проблема решается НЕ силой и НЕ очевидной логикой; первое впечатление о злодее оказывается неверным'
+    ),
+    'magic': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — волшебный стиль:\n'
+        '• Астрид Линдгрен: герой делает невозможное с полной серьёзностью; юмор возникает из столкновения детской логики и мира взрослых\n'
+        '• Льюис Кэрролл: логика волшебного мира внутренне последовательна — правила странные, но они соблюдаются строго\n'
+        '• Туве Янссон: за уютом прячется тихая тревога; опасность встречается с достоинством, не с паникой\n'
+        'ТЕХНИКА: неожиданное решение — проблема решается НЕ силой и НЕ очевидной логикой; первое впечатление о злодее оказывается неверным'
+    ),
+    'adventure': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — приключенческий стиль:\n'
+        '• Роальд Даль: мир несправедлив, взрослые часто ошибаются, но дети побеждают хитростью и воображением; тёмный юмор допустим\n'
+        '• Жюль Верн: детальные описания создают ощущение реальности невероятного; у каждого приключения есть механика\n'
+        '• Роберт Л. Стивенсон: атмосфера важнее экшена; физические ощущения (ветер, усталость, запахи) делают мир живым\n'
+        'ТЕХНИКА: в каждой главе что-то идёт НЕ ТАК, как планировал герой; каждый союзник имеет свои интересы'
+    ),
+    'tender': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — нежный стиль:\n'
+        '• А.А. Милн (Винни-Пух): нет настоящих злодеев — только маленькие катастрофы и большая дружба; диалоги как у Пятачка и Пуха\n'
+        '• Туве Янссон: философская глубина в простых вещах; маленькие события имеют большой смысл\n'
+        '• Самуил Маршак: ритм и музыкальность прозы; повторяющиеся фразы как рефрен\n'
+        'ТЕХНИКА: конфликт решается пониманием, а не борьбой; герой учится через наблюдение, а не через поучения'
+    ),
+    'nature': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — природный стиль:\n'
+        '• Сетон-Томпсон: у каждого животного своя личность, своя логика; природа не добра и не зла — она честна\n'
+        '• Редьярд Киплинг: законы природы как нравственный кодекс; у мира джунглей своя справедливость\n'
+        '• Виталий Бианки: точные детали мира природы делают чудо достоверным\n'
+        'ТЕХНИКА: животное-спутник думает иначе, чем человек — это источник мудрости и конфликта одновременно'
+    ),
+    'space': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — космический стиль:\n'
+        '• Кир Булычёв (Алиса Селезнёва): будущее оптимистично; дети равноправны со взрослыми; юмор от несоответствия огромного космоса и бытовых мелочей\n'
+        '• Аркадий и Борис Стругацкие: этические дилеммы без простых ответов; технология имеет цену\n'
+        'ТЕХНИКА: инопланетное или космическое явление объясняется через детское восприятие — наивно, но точно'
+    ),
+    'epic': (
+        'ЛИТЕРАТУРНЫЕ ОРИЕНТИРЫ — эпический стиль:\n'
+        '• Корнелия Функе: магия имеет цену; победа достаётся через настоящую жертву; мир живёт своей жизнью\n'
+        '• К.С. Льюис (Нарния): за каждым приключением скрывается более глубокий смысл; союзники могут предать\n'
+        '• Дж.Р.Р. Толкин: мир детально проработан до начала истории; у каждого места есть история\n'
+        'ТЕХНИКА: герой меняется необратимо — к финалу он уже не тот, кем был в начале'
+    ),
+}
+
+# Purpose-driven story hints
+_PURPOSE_HINTS = {
+    'brave': (
+        'ЦЕЛЬ СКАЗКИ — помочь ребёнку стать смелее.\n'
+        'Герой несколько раз отступает перед страхом — это нормально и показывается честно. '
+        'Но каждый маленький шаг навстречу страху имеет последствия и награду. '
+        'Смелость — не отсутствие страха, а действие вопреки ему. '
+        'Финал: герой делает то, что раньше казалось невозможным — и удивляется, что смог.'
+    ),
+    'fear': (
+        'ЦЕЛЬ СКАЗКИ — помочь справиться со страхом.\n'
+        'В центре сюжета — конкретный страх (темнота, одиночество, неизвестность). '
+        'Страх персонифицирован как персонаж — и оказывается не таким страшным, каким казался. '
+        'Герой не "побеждает" страх — он понимает его природу, и страх теряет власть.'
+    ),
+    'creativity': (
+        'ЦЕЛЬ СКАЗКИ — раскрыть творческий потенциал ребёнка.\n'
+        'Герой побеждает не силой и не хитростью — только воображением и нестандартным мышлением. '
+        'Там, где все ищут очевидное решение, герой видит неожиданную связь между вещами. '
+        'Творчество показывается как реальная суперсила, меняющая мир вокруг.'
+    ),
+    'friendship': (
+        'ЦЕЛЬ СКАЗКИ — научить дружить.\n'
+        'Герой в начале одинок или не умеет открываться другим. '
+        'Дружба завоёвывается поступками, а не словами — герой должен рискнуть и оказаться уязвимым. '
+        'Новый друг тоже несовершенен — и это делает дружбу настоящей.'
+    ),
+    'confidence': (
+        'ЦЕЛЬ СКАЗКИ — помочь поверить в себя.\n'
+        'Герой в начале недооценивает себя — и есть конкретная причина для этого. '
+        'Через испытания герой открывает в себе скрытый потенциал — не потому что кто-то сказал "ты можешь", '
+        'а потому что он сам убедился в этом на деле. '
+        'Самый важный момент: герой принимает решение сам, без подсказок.'
+    ),
+    'bedtime': (
+        'ЦЕЛЬ СКАЗКИ — уютная сказка на ночь.\n'
+        'Приключение настоящее, но не пугающее. Темп замедляется к финалу. '
+        'Финальные сцены тёплые, домашние, успокаивающие. '
+        'Последние абзацы должны создавать ощущение безопасности и покоя.'
+    ),
+}
+
+_IMG_STYLE_FOR_PROMPT = {
+    'ghibli':     'Studio Ghibli style, soft anime-inspired hand-painted watercolor, gentle whimsical atmosphere',
+    'disney':     'Disney fairy tale style, vibrant cheerful colors, cute rounded characters, magical sparkles',
+    'pixar':      'Pixar 3D animation style, richly detailed, warm cinematic lighting, expressive characters',
+    'watercolor': 'soft watercolor illustration, dreamy pastel tones, gentle brushstrokes, traditional art',
+    'cartoon':    'cartoon illustration, bold black outlines, bright saturated colors, playful fun style',
+    'storybook':  "classic children's storybook illustration, detailed ink and watercolor, warm cozy feeling",
+    'soviet':     'Soviet Soyuzmultfilm animation style exactly as in Cheburashka 1966, classic USSR cartoon, thick clean outlines, warm muted earthy palette, flat 2D, 1970s aesthetic',
+}
+
 _STYLE_WORDS_RE = re.compile(
     r'\b(magical|tender|adventure|epic|fairy[\s_]?tale|magic|nature|space)\b', re.IGNORECASE
 )
-# Remove any standalone English word (2+ ASCII letters) from Russian text
 _ENGLISH_WORDS_RE = re.compile(r'(?<![а-яёА-ЯЁ])\b[a-zA-Z]{2,}\b(?![а-яёА-ЯЁ])')
+
+
+def _build_char_desc(name: str, age: int, gender: str) -> str:
+    """
+    Build a SPECIFIC, DETERMINISTIC character description.
+    Same name → always same hair/eyes/clothes → DALL-E draws the same child.
+    """
+    seed = sum(ord(c) for c in name)
+
+    if gender == 'female':
+        hair_styles = [
+            'long dark brown hair in two braids',
+            'short wavy light brown hair with a hairband',
+            'long straight black hair tied in a ponytail',
+            'curly chestnut hair with a small braid on one side',
+        ]
+        clothes = [
+            'a bright teal jacket and dark blue leggings with white trainers',
+            'a red-and-white striped sweater and dark jeans with yellow boots',
+            'a cozy orange hoodie and gray skirt with white sneakers',
+            'a purple vest over white shirt and dark trousers with pink shoes',
+        ]
+    else:
+        hair_styles = [
+            'short neat dark brown hair slightly tousled',
+            'short curly black hair',
+            'short straight sandy blond hair',
+            'short reddish-brown hair with a slight wave',
+        ]
+        clothes = [
+            'a green hooded jacket and dark jeans with white trainers',
+            'a red-and-blue plaid shirt and khaki trousers with brown boots',
+            'a navy blue sweater and gray cargo pants with orange sneakers',
+            'a yellow rain jacket and dark jeans with dark sneakers',
+        ]
+
+    eye_colors = ['warm brown', 'hazel', 'bright blue-gray', 'deep green']
+
+    hair = hair_styles[seed % len(hair_styles)]
+    eyes = eye_colors[(seed // 3) % len(eye_colors)]
+    outfit = clothes[(seed // 7) % len(clothes)]
+    gender_word = 'girl' if gender == 'female' else ('boy' if gender == 'male' else 'child')
+
+    return (
+        f'{age}-year-old {gender_word} with fair light skin, {hair}, {eyes} eyes, '
+        f'wearing {outfit}'
+    )
 
 
 def choose_style(age: int, preferred_style: str) -> str:
@@ -46,7 +196,6 @@ def _strip_english_style_words(text: str) -> str:
 
 
 def _strip_all_english_words(text: str) -> str:
-    """Remove standalone English words that sneak into Russian text."""
     return _ENGLISH_WORDS_RE.sub('', text)
 
 
@@ -56,123 +205,113 @@ def _prompt(payload: dict) -> str:
     age = payload['age']
     name = payload['child_name']
     episode = payload['episode_number']
+    image_style = payload.get('image_style', 'watercolor')
+    purpose = payload.get('purpose', 'bedtime')
 
     if gender == 'male':
         gender_hint = (
-            'Главный герой — МАЛЬЧИК. Строго используй мужской род во всех глаголах и прилагательных: '
-            '"он пошёл", "он увидел", "он решил", "он улыбнулся", "смелый", "добрый".'
+            'Главный герой — МАЛЬЧИК. Строго мужской род: '
+            '"он пошёл", "он увидел", "смелый", "добрый".'
         )
         gender_word = 'boy'
     elif gender == 'female':
         gender_hint = (
-            'Главный герой — ДЕВОЧКА. Строго используй женский род во всех глаголах и прилагательных: '
-            '"она пошла", "она увидела", "она решила", "она улыбнулась", "смелая", "добрая".'
+            'Главный герой — ДЕВОЧКА. Строго женский род: '
+            '"она пошла", "она увидела", "смелая", "добрая".'
         )
         gender_word = 'girl'
     else:
         gender_hint = 'Пол нейтральный — используй только имя, избегай глаголов с родовой формой.'
         gender_word = 'child'
 
-    # Child preferences for personalization
     animal = payload.get('favorite_animal') or 'кот'
     color = payload.get('favorite_color') or 'синий'
     hobby = payload.get('hobby') or 'рисование'
     place = payload.get('favorite_place') or 'лес'
 
-    # Serial story context
     prev_memory = payload.get('previous_memory') or {}
     prev_recap = payload.get('previous_recap') or []
-    parent_note = payload.get('parent_note') or 'нет'
-
     is_continuation = episode > 1 and (prev_memory or prev_recap)
 
     if is_continuation:
         continuation_block = (
             f'ПРОДОЛЖЕНИЕ СЕРИИ (эпизод №{episode}):\n'
-            f'Предыдущие события (коротко): {json.dumps(prev_recap, ensure_ascii=False)}\n'
+            f'Предыдущие события: {json.dumps(prev_recap, ensure_ascii=False)}\n'
             f'Мир и персонажи: {json.dumps(prev_memory, ensure_ascii=False)}\n'
-            'ОБЯЗАТЕЛЬНО: начни с отсылки к событиям прошлого эпизода, '
-            'развивай тех же союзников и мир, герой встречает новые и бо́льшие испытания, '
-            'его способности и опыт растут. Увеличь character_level на 1.\n'
+            'ОБЯЗАТЕЛЬНО: начни с отсылки к прошлому эпизоду, развивай тех же союзников, '
+            'герой встречает новые испытания, его способности растут. Увеличь character_level на 1.\n'
         )
     else:
-        continuation_block = f'Первый эпизод серии. Создай уникальный волшебный мир с именем (world_name).\n'
+        continuation_block = 'Первый эпизод. Создай уникальный волшебный мир (world_name).\n'
 
-    # Fixed character description for visual consistency across all illustrations
-    # LLM must invent specifics once and reuse them verbatim in all character prompts
-    char_desc = (
-        f'{age}-year-old {gender_word}: invent once and lock — specific hair color & style '
-        f'(e.g. "short dark-brown curly hair"), specific eye color, exact full outfit with colors '
-        f'(e.g. "red-and-white striped sweater, dark blue jeans, orange sneakers with white soles"), '
-        f'one distinctive detail (e.g. "small freckles on nose" or "always wears a yellow cap"). '
-        f'Repeat this EXACT phrase word-for-word in every prompt where the character appears.'
-    )
+    literary_guide = _STYLE_LITERARY_GUIDES.get(payload['style'], '')
+    purpose_hint = _PURPOSE_HINTS.get(purpose, _PURPOSE_HINTS['bedtime'])
 
     return (
         'Ты мастер детской литературы мирового уровня. '
-        'Твоя задача — создать персональную сказку, сочетающую лучшее от великих авторов: '
-        'живые характеры и тёплый юмор Астрид Линдгрен, неожиданные повороты и богатое воображение Роальда Даля, '
-        'уютный философский мир Туве Янссон и глубокий магический реализм Корнелии Функе.\n\n'
-        'Верни СТРОГО JSON без markdown-обёртки, в точном формате:\n'
-        '{"title":"...","story_text":"...","image_prompts":["...","...","...","...","..."],'
-        '"recap":["...", "..."],'
-        '"memory":{"world_name":"...","world_state":{"locations":[],"artifacts":[],"resolved":[]}'
-        ',"character_traits":{"courage":"...","kindness":"...","special_power":"..."},'
+        'Твоя задача — написать персональную сказку, неотличимую от работы живого писателя.\n\n'
+        'Верни СТРОГО JSON без markdown-обёртки:\n'
+        '{"title":"...","story_text":"...","image_prompts":["...x5"],'
+        '"recap":["..."],'
+        '"memory":{"world_name":"...","world_state":{"locations":[],"artifacts":[],"resolved":[]},'
+        '"character_traits":{"courage":"...","kindness":"...","special_power":"..."},'
         '"character_level":1,"allies":[],"open_threads":[]},'
         '"next_hook":"..."}\n\n'
-        'next_hook — интригующая фраза 2-3 предложения на русском языке: намёк-загадка на следующее '
-        'приключение + фраза завершения вроде "Но это уже совсем другая история... узнаем в следующей сказке!" '
-        'или "Что же скрывается там? Об этом мы узнаем в следующий раз!"\n\n'
         f'ГЕРОЙ: {name}, {age} лет. {gender_hint}\n'
         f'СТИЛЬ: {style_ru}. ЭПИЗОД №{episode}.\n\n'
         f'{continuation_block}\n'
-        f'ПРЕДПОЧТЕНИЯ РЕБЁНКА — ЭТО САМОЕ ВАЖНОЕ! Каждый из четырёх пунктов ОБЯЗАН играть ключевую сюжетную роль:\n'
-        f'• Любимое животное: "{animal}" — ОБЯЗАТЕЛЬНО должно стать главным волшебным союзником или ключевым персонажем. '
-        f'Называй его "{animal}" в тексте, дай ему имя, характер, реплики. НЕ ЗАМЕНЯЙ другим животным!\n'
-        f'• Любимый цвет: "{color}" — используй в описаниях магии, одежды, волшебных предметов не менее 5 раз\n'
-        f'• Любимое занятие: "{hobby}" — покажи как особую способность или суперсилу героя в кульминационный момент\n'
-        f'• Любимое место: "{place}" — там происходит главное событие сказки, опиши его подробно\n\n'
-        f'ПОЖЕЛАНИЕ РОДИТЕЛЯ: {parent_note}\n\n'
+        f'{literary_guide}\n\n'
+        f'{purpose_hint}\n\n'
+        'ПРЕДПОЧТЕНИЯ РЕБЁНКА — важны, но вписываются ОРГАНИЧНО:\n'
+        f'• Любимое животное: "{animal}" — волшебный союзник с именем, характером и репликами. НЕ ЗАМЕНЯТЬ другим!\n'
+        f'• Любимый цвет: "{color}" — используй ТОЛЬКО как 1-2 особые символические детали (не перекрашивай всё)\n'
+        f'• Любимое занятие: "{hobby}" — особая способность героя в ключевой момент\n'
+        f'• Любимое место: "{place}" — главная локация, описанная подробно и атмосферно\n\n'
+        f'ПОЖЕЛАНИЕ РОДИТЕЛЯ: {payload.get("parent_note") or "нет"}\n\n'
         'ТРЕБОВАНИЯ К ТЕКСТУ:\n'
-        '1) story_text — СТРОГО 7500–9000 символов. Считай символы! Сказка должна занимать минимум 15 минут чтения вслух.\n'
-        '   Каждая глава — минимум 4–6 абзацев по 3–5 предложений. НЕ СОКРАЩАЙ!\n'
-        '2) Структура: яркое начало (захватывает с первой фразы) → 4–5 развёрнутых приключений '
-        '→ кульминация (самый напряжённый момент) → развязка с ненавязчивой моралью\n'
-        '3) Каждая глава начинается с "Глава [порядковый номер словами]. [Название]"\n'
-        '4) Диалоги живые, с характером персонажей, через тире; минимум 12–15 реплик\n'
-        f'5) Любимое животное "{animal}" должно присутствовать в сюжете от начала до конца\n'
-        '6) Герой проявляет настоящий характер: смелость, доброту, смекалку, иногда страх или сомнение\n'
-        '7) Текст разбит на абзацы двойным переносом строки \\n\\n\n\n'
-        'ТРЕБОВАНИЯ К IMAGE PROMPTS (8 штук на английском, 25–35 слов каждый):\n'
-        f'STEP 1 — DEFINE CHARACTER ONCE: using this template — "{char_desc}"\n'
-        'STEP 2 — USE THIS EXACT CHARACTER DESCRIPTION VERBATIM in prompts [1],[2],[4],[5],[7]. '
-        'Do NOT change hair/eyes/outfit between prompts — it must be identical, word for word.\n'
-        'STEP 3 — ANATOMY RULE: every prompt with characters must include '
-        '"correct anatomy, five fingers per hand, no extra limbs, no extra characters".\n'
-        'STEP 4 — STYLE LOCK: all 8 prompts must use the exact same style suffix — do not vary it.\n'
-        f'[0] WORLD SHOT: atmospheric panoramic view of the magical {place}, NO characters visible, '
-        f'wide establishing shot, rich details, enchanted atmosphere\n'
-        f'[1] DISCOVERY: {char_desc} named {name} first enters the magical world, '
-        f'wonder and awe on face, medium shot, soft magical light\n'
-        f'[2] CHALLENGE: {char_desc} named {name} faces the main obstacle or danger, '
-        f'dramatic tense moment, dynamic angle, intense atmosphere\n'
-        f'[3] HELPER: magical {animal} as companion, expressive close-up portrait, '
-        f'magical glow, beautifully detailed, charming and friendly\n'
-        f'[4] ADVENTURE: {char_desc} named {name} and magical {animal} exploring together, '
-        f'over-the-shoulder view, magical landscape ahead, sense of wonder\n'
-        f'[5] MOMENT: {char_desc} named {name} using their special skill ({hobby}) as magic, '
-        f'creative and focused, warm light, medium shot\n'
-        f'[6] JOURNEY: transitional scene, magical path or landscape from the story, '
-        f'atmospheric, hints of {color} colors, no characters, beautiful details\n'
-        f'[7] TRIUMPH: {char_desc} named {name} celebrating final victory, wide joyful shot, '
-        f'warm golden light, triumphant expression, {animal} nearby\n'
-        'Все 8 промптов ВИЗУАЛЬНО РАЗНЫЕ: разные планы, освещение, акценты.\n'
-        'В КАЖДЫЙ промпт добавляй в конце одинаковый суффикс: "children\'s book illustration, watercolor style, warm colors, safe for children, no text, no watermark, correct anatomy, five fingers per hand, only named characters"\n\n'
-        'ГРАММАТИКА РУССКОГО ЯЗЫКА — ОБЯЗАТЕЛЬНО:\n'
-        'Все имена персонажей должны соответствовать правилам русского языка.\n'
-        'Прилагательные согласуются с родом существительного: "Звёздное Сияние" (ср.р.), '
-        '"Золотой Ветер" (м.р.), "Серебряная Река" (ж.р.).\n'
-        'НЕ используй конструкции типа "Звездный Сияние" — это грамматическая ошибка!'
+        '1) story_text — СТРОГО 7500–9000 символов. Минимум 15 минут чтения вслух.\n'
+        '2) Структура: 5 глав. Каждая — минимум 4–6 абзацев по 3–5 предложений. НЕ СОКРАЩАЙ.\n'
+        '3) Глава начинается: "Глава [номер словами]. [Название]"\n'
+        '4) ДИАЛОГИ (минимум 12 реплик): персонажи говорят ВОКРУГ темы, не прямолинейно. '
+        'Каждый имеет уникальную манеру. Минимум 2 диалога с неожиданным поворотом или двойным смыслом.\n'
+        '5) СЮЖЕТ: минимум ОДИН поворот, которого читатель не ожидал. '
+        'Проблема решается нестандартно. Деталь из начала возвращается в финале (чеховское ружьё).\n'
+        f'6) "{animal}" присутствует от начала до конца с развивающимся характером.\n'
+        '7) Абзацы разделены двойным \\n\\n\n\n'
+        'ТРЕБОВАНИЯ К IMAGE PROMPTS (РОВНО 5 штук, на английском, 40–55 слов каждый):\n'
+        'Описывай ТОЛЬКО действие и атмосферу сцены. НЕЛЬЗЯ описывать внешность персонажа '
+        '— она будет добавлена автоматически перед каждым промптом.\n'
+        'КАЖДЫЙ промпт начинается с АКТИВНОГО ГЛАГОЛА (running, leaping, discovering, fighting, '
+        'casting, escaping, reaching, revealing...). Герои ДЕЙСТВУЮТ — не стоят, не смотрят.\n\n'
+        f'[0] ОБЛОЖКА — ОДИН ЦЕЛЬНЫЙ КАДР (не коллаж, не разделённый экран, не диптих):\n'
+        f'Эпический момент, который передаёт всю сказку: {name} в самом захватывающем действии '
+        f'из истории, рядом {animal}, на фоне {place}. Диагональная динамичная композиция, '
+        f'широкий план, яркая магия, ощущение большого приключения. '
+        f'Пример формата: "leaping across [obstacle] in [place], [animal] racing alongside, '
+        f'[magical element] exploding overhead, epic wide shot"\n\n'
+        f'[1] НАЧАЛО ПРИКЛЮЧЕНИЯ (Глава 1-2): первый захватывающий момент — герой открывает, '
+        f'находит, встречает что-то невероятное. Конкретное место из текста, '
+        f'конкретное действие из текста, реакция окружения на это действие.\n\n'
+        f'[2] ГЛАВНОЕ ИСПЫТАНИЕ (Глава 2-3): герой преодолевает препятствие или решает '
+        f'трудную задачу. Напряжение в кадре: динамика тела, эмоция, опасность или загадка. '
+        f'Другое место и другое освещение чем в [1].\n\n'
+        f'[3] КУЛЬМИНАЦИЯ (Глава 4-5): самый напряжённый и визуально яркий момент — '
+        f'финальная битва, великое открытие или решающий выбор. Максимальная динамика, '
+        f'яркий драматический свет, {animal} участвует.\n\n'
+        f'[4] ФИНАЛ: {name} и {animal} вместе после победы. Радость, покой, золотой свет. '
+        f'Широкий план, ощущение завершённого приключения и новых горизонтов впереди.\n\n'
+        'КРИТИЧНО: 5 промптов = 5 РАЗНЫХ мест + 5 РАЗНЫХ действий + 5 РАЗНЫХ планов съёмки. '
+        'Никаких описаний внешности — только сцена, действие, атмосфера!\n\n'
+        'КРЮЧОК (next_hook) — НЕ пересказ следующей серии, а ФИЗИЧЕСКАЯ ИНТРИГА:\n'
+        '• Неожиданная находка или знак в самый последний момент ("Уже почти дома...")\n'
+        '• Один конкретный загадочный элемент БЕЗ объяснения — что-то увидел, услышал, нашёл\n'
+        '• Финальная фраза — вопрос или обрыв на полуслове: читатель должен физически '
+        'захотеть немедленно узнать продолжение\n'
+        '• Последнее предложение ОБЯЗАНО заканчиваться отсылкой к следующей сказке: "...но это уже история следующей сказки!" или "Узнаем в следующий раз!"
+'
+        '• Максимум 2-3 предложения. Намёк, тайна и интрига к следующей серии.\n\n'
+        'ГРАММАТИКА: прилагательные согласуются с родом. "Звёздное Сияние" (ср.р.), "Золотой Ветер" (м.р.).\n'
+        'НЕ используй конструкции типа "Звездный Сияние" — грамматическая ошибка!'
     )
 
 
@@ -189,7 +328,7 @@ def _call_openrouter(payload: dict) -> dict:
         json={
             'model': settings.openrouter_model,
             'messages': [{'role': 'user', 'content': _prompt(payload)}],
-            'temperature': 0.85,
+            'temperature': 0.88,
             'max_tokens': 8000,
             'response_format': {'type': 'json_object'},
         },
@@ -201,7 +340,6 @@ def _call_openrouter(payload: dict) -> dict:
 
 
 def _template_fallback(payload: dict) -> dict:
-    """Fallback story when AI is unavailable. Uses child preferences."""
     name = payload['child_name']
     gender = payload.get('gender', 'neutral')
     style = payload.get('style', 'magical')
@@ -212,136 +350,115 @@ def _template_fallback(payload: dict) -> dict:
     hobby = payload.get('hobby') or 'рисование'
     place = payload.get('favorite_place') or 'лес'
 
-    # Gender-specific verb forms
     if gender == 'female':
         vyshel = 'вышла'; poshel = 'пошла'; uvidel = 'увидела'; skazal = 'сказала'
-        nashel = 'нашла'; vernulsya = 'вернулась'; stal = 'стала'; reshil = 'решила'
-        podoshel = 'подошла'; uslyshal = 'услышала'; podnyal = 'подняла'; doshel = 'дошла'
-        zametil = 'заметила'; pobezhal = 'побежала'; ponyal = 'поняла'
-        ulybнulsya = 'улыбнулась'; vzyal = 'взяла'; byl = 'была'; znal = 'знала'
-        hotel = 'хотела'; pron = 'она'; pron_gen = 'её'; pron_dat = 'ей'
-        g_suf = 'а'; g_adj = 'ая'
+        nashel = 'нашла'; vernulsya = 'вернулась'; podoshel = 'подошла'
+        uslyshal = 'услышала'; podnyal = 'подняла'; pobezhal = 'побежала'
+        ponyal = 'поняла'; ulybнulsya = 'улыбнулась'; vzyal = 'взяла'
+        zametil = 'заметила'; pron = 'она'; g_suf = 'а'; zasmeyal = 'засмеялась'
     else:
         vyshel = 'вышел'; poshel = 'пошёл'; uvidel = 'увидел'; skazal = 'сказал'
-        nashel = 'нашёл'; vernulsya = 'вернулся'; stal = 'стал'; reshil = 'решил'
-        podoshel = 'подошёл'; uslyshal = 'услышал'; podnyal = 'поднял'; doshel = 'дошёл'
-        zametil = 'заметил'; pobezhal = 'побежал'; ponyal = 'понял'
-        ulybнulsya = 'улыбнулся'; vzyal = 'взял'; byl = 'был'; znal = 'знал'
-        hotel = 'хотел'; pron = 'он'; pron_gen = 'его'; pron_dat = 'ему'
-        g_suf = ''; g_adj = 'ый'
+        nashel = 'нашёл'; vernulsya = 'вернулся'; podoshel = 'подошёл'
+        uslyshal = 'услышал'; podnyal = 'поднял'; pobezhal = 'побежал'
+        ponyal = 'понял'; ulybнulsya = 'улыбнулся'; vzyal = 'взял'
+        zametil = 'заметил'; pron = 'он'; g_suf = ''; zasmeyal = 'засмеялся'
 
     style_titles = {
-        'magic': f'и Тайна {color.capitalize()} Звезды',
-        'magical': f'и Тайна {color.capitalize()} Звезды',
+        'magic': 'и Тайна Хрустального Камня',
+        'magical': 'и Тайна Хрустального Камня',
         'adventure': 'и Остров Потерянных Карт',
         'nature': 'и Говорящий Родник',
         'space': 'и Звёздный Маяк',
-        'tender': f'и Серебрян{g_adj} {animal.capitalize()}',
+        'tender': 'и Серебряный Колокольчик',
         'epic': 'и Меч Рассвета',
     }
     ep_suffix = f' (Эпизод {episode})' if episode > 1 else ''
     title = f'{name} {style_titles.get(style, "и Волшебное Приключение")}{ep_suffix}'
 
     text = (
-        f"Глава первая. Необычное утро в {place}\n\n"
-        f"В то утро {place} выглядел{'' if place.endswith('а') else 'о'} по-особенному. "
-        f"{name} {vyshel} из дома и сразу {uvidel}: вся трава переливается {color}ными огоньками, "
-        f"будто кто-то рассыпал тысячи крохотных звёзд прямо на землю.\n\n"
-        f"— Вот это да! — {skazal} {name} и {podoshel} ближе.\n\n"
-        f"Огоньки не гасли. Они прыгали с травинки на травинку и складывались в узор — "
-        f"настоящую стрелку! Стрелка указывала вглубь {place}а.\n\n"
-        f"Вдруг из кустов {uslyshal} {name} знакомый звук. Там сидел{'' if animal[-1] in 'аяь' else ''} "
-        f"маленьк{g_adj if animal[-1] not in 'аяь' else 'ая'} {animal} с блестящими глазами.\n\n"
-        f"— Наконец-то! — {skazal} {animal.capitalize()} человеческим голосом. "
-        f"— Я так долго ждал{'а' if animal[-1] in 'аяь' else ''} тебя, {name}. "
-        f"Ты нужен{'а' if gender == 'female' else ''} нам — только ты можешь спасти {place}!\n\n"
-        f"{name} широко раскрыл{g_suf} глаза. {animal.capitalize()} умел говорить!\n\n"
+        f"Глава первая. Зов из {place}а\n\n"
+        f"Тот день начался обычно. {name} {vyshel} на улицу и сразу остановил{g_suf}ся — "
+        f"что-то изменилось. Воздух в {place}е пах иначе: острее, живее, будто перед грозой.\n\n"
+        f"— Странно, — пробормотал{g_suf} {name} и {poshel} ближе к деревьям.\n\n"
+        f"Из-за старого дуба выскочил{'' if animal[-1] not in 'аяь' else 'о'} что-то маленькое. "
+        f"Это оказался{'' if animal[-1] not in 'аяь' else 'ась'} {animal} — но не обычный{'' if animal[-1] not in 'аяь' else 'ая'}. "
+        f"Шерсть переливалась, глаза светились, и, главное — {pron} говорил{'а' if animal[-1] in 'аяь' else ''}.\n\n"
+        f"— Наконец-то, — {skazal} {animal} без лишних предисловий. — Я искал{'а' if animal[-1] in 'аяь' else ''} тебя три дня.\n\n"
+        f"— Меня? — {uvidel} {name} недоумение во взгляде {animal}а. — Почему меня?\n\n"
+        f"— Потому что ты умеешь {hobby}. В {place}е нет больше никого, кто умеет. "
+        f"А нам это очень нужно.\n\n"
+        f"Так {name} узнал{g_suf}: в глубине {place}а живёт Страж Равновесия — "
+        f"древнее существо, которое следит, чтобы мир не перекосился. "
+        f"Но три дня назад Страж заснул, и теперь в {place}е всё начало меняться не в ту сторону.\n\n"
 
-        f"Глава вторая. Первое испытание\n\n"
-        f"Пока {name} и {animal} шли по {place}у, {animal} объяснял{'а' if animal[-1] in 'аяь' else ''}: "
-        f"злой Серый Туман похитил Хрустальный Камень, который согревал весь {place}. "
-        f"Без него здесь скоро станет холодно и темно. "
-        f"Но Туман спрятал камень за тремя загадочными дверями.\n\n"
-        f"Первая дверь оказалась из чистого льда. На ней было написано: "
-        f"«Открою тому, кто умеет создавать красоту».\n\n"
-        f"— {hobby.capitalize()}! — догадал{g_suf}ся {name}. — Это же про меня!\n\n"
-        f"{name} взял{g_suf} найденный рядом уголёк и начал{g_suf} рисовать прямо на льду. "
-        f"Сначала — маленькое солнышко. Потом — цветы. Потом — силуэты деревьев {place}а. "
-        f"Под каждой линией лёд теплел, трескался и таял. Вскоре дверь открылась!\n\n"
-        f"— Молодец{'а' if gender == 'female' else ''}! — восхитился {animal}. — Так я и знал{'а' if animal[-1] in 'аяь' else ''}!\n\n"
+        f"Глава вторая. Испытание первое\n\n"
+        f"Они шли долго. {animal.capitalize()} объяснял{'а' if animal[-1] in 'аяь' else ''} на ходу: "
+        f"чтобы разбудить Стража, нужно пройти три испытания. Первое — Зеркальный Лабиринт.\n\n"
+        f"Лабиринт выглядел как сад из стекла: стены отражали всё, и можно было идти часами, "
+        f"возвращаясь к началу.\n\n"
+        f"— Обычной дорогой не выйдешь, — {skazal} {animal}. — Здесь нужна твоя голова.\n\n"
+        f"{name} огляделся. Стены отражали его самого — сотни раз, под разными углами. "
+        f"И тут {ponyal} {name}: отражения слегка запаздывали. Буквально на полшага.\n\n"
+        f"— Нужно идти против отражения, — {skazal} {name} медленно. — Туда, куда оно НЕ идёт.\n\n"
+        f"Это было труднее, чем казалось — каждый шаг противоречил инстинктам. "
+        f"Но через десять минут они стояли у выхода. {animal.capitalize()} смотрел{'а' if animal[-1] in 'аяь' else ''} на {name} с чем-то похожим на уважение.\n\n"
 
-        f"Глава третья. Тайна {color.capitalize()} Реки\n\n"
-        f"За первой дверью оказалась {color}ная река. Она текла в никуда и нигде не начиналась — "
-        f"просто была. По берегу ходил старый Ёж с блокнотом и что-то бормотал себе под нос.\n\n"
-        f"— Вторая дверь под водой, — {skazal} Ёж, не поднимая глаз. "
-        f"— Но переплыть реку нельзя: она слишком холодная. Нужно найти мост.\n\n"
-        f"— А где мост? — спросил{g_suf} {name}.\n\n"
-        f"— Его нет. Его нужно построить из слов.\n\n"
-        f"Ёж объяснил: эта река слышит только добрые слова. Чем добрее слова — "
-        f"тем больше камней поднимается со дна.\n\n"
-        f"{name} {podoshel} к воде и начал{g_suf} говорить. Про маму и папу. "
-        f"Про {animal}а, который такой смелый. Про {place}, который такой красивый. "
-        f"Про то, как хорошо, когда все счастливы.\n\n"
-        f"С каждым словом из воды поднимался камень. Через несколько минут {name} "
-        f"{poshel} по каменному мосту, как по ступенькам!\n\n"
+        f"Глава третья. Разговор у реки\n\n"
+        f"За лабиринтом текла река. Не обычная — она текла бесшумно, и вода в ней была тёмной, "
+        f"как поздний вечер. На берегу сидел старик с удочкой, хотя рыбы в реке явно не было.\n\n"
+        f"— Второе испытание, — {skazal} старик, не оборачиваясь. — Ответь мне на вопрос.\n\n"
+        f"— Какой? — спросил{g_suf} {name}.\n\n"
+        f"— Что страшнее: потерять что-то важное или никогда не иметь?\n\n"
+        f"{name} думал долго. {animal.capitalize()} молчал{'а' if animal[-1] in 'аяь' else ''} рядом — "
+        f"видно, что это испытание не для {pron}.\n\n"
+        f"— Никогда не иметь, — {skazal} наконец {name}. — Потому что потеря — это значит, что оно было. "
+        f"А если не было — ты даже не знаешь, чего лишился.\n\n"
+        f"Старик кивнул и исчез вместе с удочкой. Река начала светлеть.\n\n"
 
-        f"Глава четвёртая. Серый Туман\n\n"
-        f"Третья дверь охранял сам Серый Туман. Он был огромным — до самых облаков — "
-        f"и говорил голосом, похожим на зимний ветер:\n\n"
-        f"— Уходите! Камень мой! Я хочу, чтобы везде было серо и холодно!\n\n"
-        f"— Почему? — спокойно спросил{g_suf} {name}.\n\n"
-        f"Туман замолчал. Никто раньше не спрашивал «почему».\n\n"
-        f"— Потому что... — начал Туман медленнее. — Потому что когда всё серое, "
-        f"меня не видно. А когда вокруг {color}ные цветы и яркий свет — я становлюсь совсем маленьким...\n\n"
-        f"— Ты просто одинок, — {ponyal} {name}. — Тебе нужен друг.\n\n"
-        f"{name} {vzyal} {pron_gen} рисунок — тот самый, что нарисовал{g_suf} на льду — "
-        f"и протянул Туману. На рисунке был нарисован Туман, но красивый: "
-        f"с {color}ными звёздами внутри.\n\n"
-        f"Туман долго смотрел на рисунок. Потом тихо {skazal}:\n\n"
-        f"— Никто ещё не видел во мне красоты...\n\n"
-        f"И медленно отступил, открывая третью дверь.\n\n"
+        f"Глава четвёртая. {hobby.capitalize()} как ключ\n\n"
+        f"Третье испытание было самым странным: огромная каменная дверь с надписью "
+        f"«Открою тому, кто создаст то, чего здесь не было».\n\n"
+        f"— Что здесь есть? — {uslyshal} {name}.\n\n"
+        f"— Камень. Мох. Темнота. Тишина.\n\n"
+        f"— А чего нет?\n\n"
+        f"{animal.capitalize()} {ulybнulsya}: — Всего остального.\n\n"
+        f"{name} понял{'а' if gender == 'female' else ''}. Взял{g_suf} острый камень и начал{g_suf} "
+        f"использовать {hobby} — так, как умел{g_suf} только {pron}. "
+        f"Под руками {name}а что-то стало появляться: сначала тени, потом образы, потом почти настоящее. "
+        f"Дверь медленно открылась — как будто тоже удивилась.\n\n"
 
-        f"Глава пятая. Свет возвращается\n\n"
-        f"За дверью лежал Хрустальный Камень — тёплый, {color}ного цвета, "
-        f"размером с два кулака. {name} {podnyal} его, и {place} сразу изменился: "
-        f"трава стала ярче, воздух — теплее, {color}ные огоньки запрыгали повсюду.\n\n"
-        f"— Ты сделал{g_suf} это! — закричал{g_suf} {animal} и {pobezhal} к {name}. "
-        f"— Ты спас{g_suf} {place}!\n\n"
-        f"{name} {zasmeyal_suf} — и поднял{g_suf} {animal}а на руки.\n\n"
-        f"— Мы сделали это вместе. Ты, я и... даже Туман помог в конце.\n\n"
-        f"Когда {name} {vernulsya} домой, в кармане лежал маленький {color}ный камушек — "
-        f"подарок от {animal}а. Каждый раз, когда {name} {zametil} его, "
-        f"{pron} {ulybнulsya}: настоящие друзья находятся там, где их меньше всего ждёшь.\n\n"
-        f"Мораль: Смелость — это не когда не страшно. "
-        f"Смелость — это когда страшно, но ты всё равно идёшь вперёд. "
-        f"И ещё: иногда в самом хмуром и сером человеке прячется тот, кто просто хочет дружить."
-    ).replace('{zasmeyal_suf}', 'засмеял' + g_suf + 'ся' if gender != 'female' else 'засмеялась')
-
-    # Fix the template string issue
-    text = text.replace(
-        f"{name} {{zasmeyal_suf}} — и поднял{g_suf} {animal}а на руки.",
-        f"{name} {'засмеялась' if gender == 'female' else 'засмеялся'} — и поднял{g_suf} {animal}а на руки."
+        f"Глава пятая. Пробуждение\n\n"
+        f"За дверью спал Страж. Он был огромным — больше дерева, меньше горы — "
+        f"и совсем не страшным. Скорее усталым.\n\n"
+        f"— Как его разбудить? — шёпотом спросил{g_suf} {name}.\n\n"
+        f"— Позови по имени, — {skazal} {animal}. — Его имя — «Равновесие».\n\n"
+        f"— Равновесие, — {skazal} {name} вслух. Не громко — но уверенно.\n\n"
+        f"Страж открыл глаза. Посмотрел на {name}а долгим взглядом.\n\n"
+        f"— Три дня прошло, — произнёс он голосом, похожим на эхо в пещере. — Я думал, никто не придёт.\n\n"
+        f"— Мы пришли, — {skazal} {name}. — Потому что {place} — это важно.\n\n"
+        f"Страж {zasmeyal}ся — тихо, как будто забыл, как это делается. И {place} снова стал собой.\n\n"
+        f"Когда {name} {vernulsya} домой, {animal} {pobezhal} рядом. "
+        f"Ни слова о том, что было. Некоторые вещи не нуждаются в словах.\n\n"
+        f"А потом {name} {zametil}: всё, что случилось, изменило не {place} — изменило его самого."
     )
 
-    child_desc = f"{'girl' if gender == 'female' else 'boy'}, age {age}, brown curly hair, adventurous expression"
     image_prompts = [
-        f"children's book illustration, wide panoramic view of magical {place}, glowing {color} lights on grass, "
-        f"enchanted atmosphere, no characters, warm golden light, watercolor style, detailed",
-        f"children's book illustration, {child_desc}, discovering sparkling {color} lights in magical {place}, "
-        f"wonder and curiosity on face, medium shot, soft morning light, watercolor style",
-        f"children's book illustration, {child_desc}, drawing on icy door with charcoal, "
-        f"creative and determined, dramatic angle, cool blue light turning warm, watercolor style",
-        f"children's book illustration, cute magical {animal} with shining eyes, speaking, expressive, "
-        f"close-up portrait, magical {color} glow around, forest background, watercolor style",
-        f"children's book illustration, {child_desc}, holding glowing {color} crystal with both hands, "
-        f"triumphant joyful expression, magical {animal} jumping nearby, wide shot, golden warm light, watercolor style",
+        f'leaping through magical {place} in an epic adventure moment, {animal} racing alongside, '
+        f'golden magical light bursting overhead, wide dramatic shot, sense of great adventure beginning',
+        f'crouching to face small magical {animal} that has appeared from nowhere, '
+        f'both looking at each other with surprise and wonder, dappled magical light, medium shot',
+        f'running through hall of mirrored glass walls, reflections multiplying everywhere, '
+        f'determined expression, dramatic low angle, cool silver light with warm glow ahead',
+        f'using {hobby} skill in a daring moment, magical energy radiating from hands, '
+        f'{animal} watching intently, warm golden light, tense dramatic atmosphere',
+        f'celebrating triumphant victory in {place} with {animal} companion, '
+        f'joyful wide shot, golden sunset light, magical sparkles, peaceful yet triumphant mood',
     ]
 
-    prev_recap = payload.get('previous_recap') or []
     recap_items = [
-        f'{name} спас{"ла" if gender == "female" else ""} {place} от Серого Тумана.',
-        f'Нашёл{"а" if gender == "female" else ""} Хрустальный Камень за тремя дверями.',
-        f'Подружился{"ась" if gender == "female" else ""} с волшебным {animal}ом.',
+        f'{name} прошёл{"а" if gender == "female" else ""} три испытания в {place}е.',
+        f'Разбудил{"а" if gender == "female" else ""} Стража Равновесия.',
+        f'Открыл{"а" if gender == "female" else ""}: {hobby} — настоящая суперсила.',
     ]
 
     return {
@@ -352,23 +469,23 @@ def _template_fallback(payload: dict) -> dict:
         'memory': {
             'world_name': f'Волшебный {place.capitalize()}',
             'world_state': {
-                'locations': [place, f'{color}ная река', 'Ледяная дверь'],
-                'artifacts': ['Хрустальный Камень', f'{color}ный камушек'],
-                'resolved': ['Серый Туман помирился', 'Хрустальный Камень возвращён'],
+                'locations': [place, 'Зеркальный Лабиринт', 'Тёмная Река'],
+                'artifacts': ['Ключ Равновесия'],
+                'resolved': ['Страж разбужен', 'Равновесие восстановлено'],
             },
             'character_traits': {
-                'courage': 'сильная' if gender == 'female' else 'сильный',
+                'courage': 'растёт',
                 'kindness': 'главная черта',
                 'special_power': f'умение {hobby}а как суперсила',
             },
             'character_level': episode,
-            'allies': [f'волшебный {animal}', 'Серый Туман (бывший враг)'],
-            'open_threads': [f'{animal.capitalize()} намекнул{"а" if animal[-1] in "аяь" else ""} на новое приключение'],
+            'allies': [f'волшебный {animal}', 'Страж Равновесия'],
+            'open_threads': [f'{animal.capitalize()} упомянул{"а" if animal[-1] in "аяь" else ""} о втором {place}е'],
         },
         'next_hook': (
-            f'Той ночью {name} увидел{"а" if gender == "female" else ""} сон: '
-            f'{animal.capitalize()} бежал{"а" if animal[-1] in "аяь" else ""} по серебристой дороге '
-            f'и оборачивал{"ась" if animal[-1] in "аяь" else "ся"}, зовя за собой...'
+            f'Той ночью {name} слышал{"а" if gender == "female" else ""} знакомый голос во сне. '
+            f'{animal.capitalize()} говорил{"а" if animal[-1] in "аяь" else ""}: "Это был только первый {place}. '
+            f'Есть ещё один. Там всё иначе..."'
         ),
     }
 
@@ -393,4 +510,8 @@ def generate_story_payload(payload: dict) -> dict:
     story = _strip_english_style_words(result['story_text'])
     story = _strip_all_english_words(story)
     result['story_text'] = story
+    # Inject deterministic char_desc so image_service can prefix every prompt consistently
+    result['char_desc'] = _build_char_desc(
+        payload['child_name'], payload['age'], payload.get('gender', 'neutral')
+    )
     return result

@@ -1,4 +1,6 @@
 import logging
+import random
+import struct
 import uuid
 from pathlib import Path
 
@@ -10,6 +12,8 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 # ── Font paths ───────────────────────────────────────────────────────────────
+_FONTS_DIR = Path('/opt/malenkie-legendy/backend/app/fonts')
+
 _REGULAR_CANDIDATES = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans.ttf',
@@ -29,54 +33,64 @@ _ITALIC_CANDIDATES = [
     '/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf',
 ]
 
+# Fairy-tale Cyrillic font (Neucha — handwritten, child-friendly)
+_FAIRY_FONT_PATH = _FONTS_DIR / 'Neucha-Regular.ttf'
+
+
+def _ensure_fairy_font() -> str | None:
+    """Return path to Neucha font if present on disk."""
+    if _FAIRY_FONT_PATH.exists():
+        return str(_FAIRY_FONT_PATH)
+    logger.warning('Neucha font not found at %s', _FAIRY_FONT_PATH)
+    return None
+
+
 # ── Page geometry (A4) ───────────────────────────────────────────────────────
 PAGE_W = 210
 PAGE_H = 297
 MARGIN_OUTER = 18
 MARGIN_TOP = 22
 MARGIN_BOTTOM = 22
-CONTENT_W = PAGE_W - 2 * MARGIN_OUTER
+CONTENT_W = PAGE_W - 2 * MARGIN_OUTER   # 174 mm
 
-# ── Gender-based color palettes ──────────────────────────────────────────────
-_PALETTE = {
-    'female': {
-        'BG':       (255, 248, 252),
-        'HDR':      (180, 70, 120),
-        'HDR_TXT':  (255, 235, 248),
-        'BODY':     (50,  20,  40),
-        'ACC':      (210, 110, 165),
-        'RHD':      (175, 85, 135),
-        'TTL':      (145, 40,  95),
-        'IMG_BRD':  (200, 130, 175),
-        'HOOK_BG':  (252, 235, 248),
-    },
-    'male': {
-        'BG':       (245, 248, 255),
-        'HDR':      (45,  75,  155),
-        'HDR_TXT':  (215, 230, 255),
-        'BODY':     (15,  25,  60),
-        'ACC':      (75,  115, 200),
-        'RHD':      (65,  105, 185),
-        'TTL':      (28,  52,  135),
-        'IMG_BRD':  (95,  135, 210),
-        'HOOK_BG':  (232, 240, 255),
-    },
-    'neutral': {
-        'BG':       (255, 252, 242),
-        'HDR':      (120, 60,  20),
-        'HDR_TXT':  (255, 245, 225),
-        'BODY':     (35,  18,  8),
-        'ACC':      (180, 110, 40),
-        'RHD':      (160, 100, 50),
-        'TTL':      (80,  35,  10),
-        'IMG_BRD':  (160, 110, 50),
-        'HOOK_BG':  (245, 230, 205),
-    },
+# Image display width = full content width
+IMG_W = CONTENT_W          # 174 mm
+# IMG_H is computed per-image from actual pixel dimensions (see _get_img_display_h)
+# Fallback ratio used only for space estimation
+_IMG_H_FALLBACK = IMG_W    # assume square (1024×1024) by default
+IMG_TOTAL = _IMG_H_FALLBACK + 4 + 4 + 10   # used for rough space checks
+
+# ── Universal noble "old book" palette ───────────────────────────────────────
+# Warm parchment background with antique mahogany / gold accents.
+# Same for all genders — "общий благородный цвет".
+_BOOK = {
+    'BG':       (252, 248, 233),   # aged parchment
+    'HDR':      (48,  28,  12),    # deep mahogany (like old leather cover)
+    'HDR_TXT':  (252, 248, 233),   # cream text on dark header
+    'BODY':     (28,  16,   8),    # very dark warm brown body text
+    'ACC':      (148, 108,  40),   # antique gold accents
+    'RHD':      (95,  65,  30),    # warm medium brown running header
+    'TTL':      (68,  32,  10),    # dark mahogany title
+    'IMG_BRD':  (168, 120,  46),   # antique gold frame
+    'HOOK_BG':  (244, 238, 215),   # slightly darker parchment
+    'TEX':      (228, 216, 196),   # paper grain dots (clearly darker than BG)
 }
+_PALETTE = {
+    'female':  _BOOK,
+    'male':    _BOOK,
+    'neutral': _BOOK,
+}
+
+# Pre-computed texture points with fixed seed — same grain on every page
+_TEX_RNG = random.Random(2025)
+_TEX_POINTS = [
+    (_TEX_RNG.uniform(1, PAGE_W - 1), _TEX_RNG.uniform(1, PAGE_H - 1),
+     _TEX_RNG.uniform(0.5, 1.2))
+    for _ in range(500)
+]
 
 
 def _to_genitive(name: str) -> str:
-    """Convert Russian first name to genitive case (approximation)."""
     if not name:
         return name
     n = name.strip()
@@ -104,6 +118,22 @@ def _find_font(candidates: list[str], label: str) -> str:
     raise RuntimeError(f'Font {label} not found. Run: apt-get install fonts-dejavu-core')
 
 
+def _get_img_display_h(path: Path, display_w: float) -> float:
+    """Return display height that preserves the image's actual aspect ratio."""
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(24)
+        # PNG: signature (8) + chunk length (4) + 'IHDR' (4) + width (4) + height (4)
+        if header[:8] == b'\x89PNG\r\n\x1a\n' and header[12:16] == b'IHDR':
+            px_w = struct.unpack('>I', header[16:20])[0]
+            px_h = struct.unpack('>I', header[20:24])[0]
+            if px_w > 0:
+                return display_w * px_h / px_w
+    except Exception:
+        pass
+    return _IMG_H_FALLBACK  # fallback: assume square
+
+
 def _url_to_local_path(url: str) -> Path | None:
     try:
         filename = url.rstrip('/').split('/')[-1]
@@ -116,9 +146,15 @@ def _url_to_local_path(url: str) -> Path | None:
 # ── Drawing helpers ──────────────────────────────────────────────────────────
 
 def _fill_bg(pdf: FPDF, C: dict) -> None:
+    """Fill page with parchment color, then overlay subtle paper grain texture."""
     r, g, b = C['BG']
     pdf.set_fill_color(r, g, b)
     pdf.rect(0, 0, PAGE_W, PAGE_H, style='F')
+    # Paper grain — visible dots, fixed pattern
+    tr, tg, tb = C['TEX']
+    pdf.set_fill_color(tr, tg, tb)
+    for (x, y, size) in _TEX_POINTS:
+        pdf.ellipse(x, y, size, size, style='F')
 
 
 def _draw_corner_ornaments(pdf: FPDF, C: dict, margin: float = 10.0, size: float = 8.0) -> None:
@@ -142,7 +178,7 @@ def _draw_ornament_divider(pdf: FPDF, C: dict) -> None:
     pdf.set_draw_color(r, g, b)
     pdf.set_line_width(0.3)
     pdf.line(cx - 30, cy, cx - 6, cy)
-    pdf.line(cx + 6, cy, cx + 30, cy)
+    pdf.line(cx + 6,  cy, cx + 30, cy)
     pdf.set_fill_color(r, g, b)
     pdf.ellipse(cx - 2, cy - 2, 4, 4, style='F')
     pdf.set_y(pdf.get_y() + 8)
@@ -188,12 +224,12 @@ def _draw_framed_image(pdf: FPDF, C: dict, img_path: Path,
         logger.warning('Image render failed: %s', e)
 
 
-def _draw_square_image(pdf: FPDF, C: dict, img_path: Path,
-                       size: float = 110, centered: bool = True) -> None:
-    img_x = (PAGE_W - size) / 2 if centered else MARGIN_OUTER
+def _draw_wide_image(pdf: FPDF, C: dict, img_path: Path) -> None:
+    """Draw image at full content width, preserving the image's actual aspect ratio."""
+    display_h = _get_img_display_h(img_path, IMG_W)
     iy = pdf.get_y() + 3
-    _draw_framed_image(pdf, C, img_path, img_x, iy, size, size)
-    pdf.set_y(iy + size + 2 + 8)
+    _draw_framed_image(pdf, C, img_path, MARGIN_OUTER, iy, IMG_W, display_h, frame_pad=2)
+    pdf.set_y(iy + display_h + 4 + 8)
 
 
 def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
@@ -242,41 +278,59 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
     filename = f'{uuid.uuid4().hex}.pdf'
     full_path = out_dir / filename
 
-    # Pick color palette
-    C = _PALETTE.get(gender, _PALETTE['neutral'])
+    C = _PALETTE.get(gender, _BOOK)
 
     try:
         regular = _find_font(_REGULAR_CANDIDATES, 'regular')
         bold = _find_font(_BOLD_CANDIDATES, 'bold')
         italic_path = next((c for c in _ITALIC_CANDIDATES if Path(c).exists()), regular)
+        fairy_font = _ensure_fairy_font()
 
         pdf = FPDF()
         pdf.set_auto_page_break(auto=False)
-        pdf.add_font('DejaVu', style='', fname=regular)
+        pdf.add_font('DejaVu', style='',  fname=regular)
         pdf.add_font('DejaVu', style='B', fname=bold)
         pdf.add_font('DejaVu', style='I', fname=italic_path)
+        has_fairy = False
+        if fairy_font:
+            try:
+                pdf.add_font('Fairy', style='', fname=fairy_font)
+                has_fairy = True
+            except Exception as e:
+                logger.warning('Fairy font load failed: %s', e)
 
-        # Collect local image paths
         local_images: list[Path | None] = [_url_to_local_path(u) for u in image_urls]
 
-        # Image slot assignments:
-        # [0] cover  [1-5] chapters 0-4  [6] overflow/continuation  [7] final
+        # ── Image slot assignments ───────────────────────────────────────────
+        # [0] = cover character portrait
+        # [1-5] = one image per chapter (chapters 0-4)
+        # [6] = animal companion (shown once at end)
+        # [7] = final/triumph scene
         def _img(idx: int) -> Path | None:
             return local_images[idx] if idx < len(local_images) else None
 
+        # Image slots: [0]=cover, [1-3]=chapters 1-3, [4]=final
         cover_img    = _img(0)
-        chapter_imgs = [_img(i) for i in range(1, 6)]   # chapters 0-4
-        overflow_img = _img(6)                            # continuation pages
-        final_img    = _img(7) or (local_images[-1] if local_images else None)
-
-        # ── PAGE 1: Cover ─────────────────────────────────────────────────
-        pdf.add_page()
-        _fill_bg(pdf, C)
-        _draw_corner_ornaments(pdf, C, margin=12, size=12)
+        chapter_imgs = [_img(i) for i in range(1, 4)]   # chapters 0-2 (indices 1,2,3)
+        final_img    = _img(4)
 
         rr, rg, rb = C['RHD']
         ar, ag, ab = C['ACC']
         tr, tg, tb = C['TTL']
+        br, bg, bb = C['BODY']
+        hr2, hg2, hb2 = C['HDR']
+        ht_r, ht_g, ht_b = C['HDR_TXT']
+
+        def _title_font(size: float) -> None:
+            if has_fairy:
+                pdf.set_font('Fairy', style='', size=size)
+            else:
+                pdf.set_font('DejaVu', style='B', size=size)
+
+        # ── PAGE 1: Cover ─────────────────────────────────────────────────────
+        pdf.add_page()
+        _fill_bg(pdf, C)
+        _draw_corner_ornaments(pdf, C, margin=12, size=14)
 
         # Series label
         pdf.set_y(18)
@@ -288,7 +342,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         pdf.set_line_width(0.4)
         cx = PAGE_W / 2
         y0 = pdf.get_y() + 2
-        pdf.line(cx - 50, y0, cx + 50, y0)
+        pdf.line(cx - 55, y0, cx + 55, y0)
         pdf.set_y(y0 + 6)
 
         if episode_number > 1:
@@ -299,29 +353,29 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                            new_x='LMARGIN', new_y='NEXT')
             pdf.ln(4)
 
-        # Cover illustration — frameless, like a watercolor splash
+        # Cover: actual aspect ratio (no squishing)
         if cover_img:
-            cov_size = 142
-            cov_x = (PAGE_W - cov_size) / 2
+            cov_w = CONTENT_W
+            cov_h = _get_img_display_h(cover_img, cov_w)
+            cov_x = MARGIN_OUTER
             cov_y = pdf.get_y() + 2
             try:
-                pdf.image(str(cover_img), x=cov_x, y=cov_y, w=cov_size, h=cov_size)
+                pdf.image(str(cover_img), x=cov_x, y=cov_y, w=cov_w, h=cov_h)
             except Exception as e:
                 logger.warning('Cover image render failed: %s', e)
-            pdf.set_y(cov_y + cov_size + 6)
+            pdf.set_y(cov_y + cov_h + 6)
         else:
             pdf.ln(30)
 
-        # Title
-        pdf.set_font('DejaVu', style='B', size=24)
+        # Title — fairy-tale font on cover
+        _title_font(26)
         pdf.set_text_color(tr, tg, tb)
         pdf.set_x(MARGIN_OUTER)
-        pdf.multi_cell(CONTENT_W, 13, title, align='C', new_x='LMARGIN', new_y='NEXT')
-        pdf.ln(8)
+        pdf.multi_cell(CONTENT_W, 14, title, align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.ln(6)
 
         _draw_ornament_divider(pdf, C)
 
-        # Dedication with correct genitive case
         name_gen = _to_genitive(child_name) if child_name else ''
         dedication = f'Персональная сказка для {name_gen}' if name_gen else 'Персональная сказка'
         pdf.set_font('DejaVu', style='I', size=9.5)
@@ -334,9 +388,8 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         pdf.set_x(MARGIN_OUTER)
         pdf.multi_cell(CONTENT_W, 5, '✦  Маленькие легенды  ✦', align='C', new_x='LMARGIN', new_y='NEXT')
 
-        # ── Story pages ───────────────────────────────────────────────────
+        # ── Parse story into chapters ─────────────────────────────────────────
         paragraphs = [p.strip() for p in story_text.split('\n\n') if p.strip()]
-
         chapters: list[tuple[str, list[str]]] = []
         current_chapter_title = ''
         current_paras: list[str] = []
@@ -349,24 +402,16 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 current_paras = []
             else:
                 current_paras.append(para)
-
         if current_chapter_title or current_paras:
             chapters.append((current_chapter_title, current_paras))
 
         page_num = 1
-        page_has_image = False
-
-        br, bg, bb = C['BODY']
-        hr2, hg2, hb2 = C['HDR']
-        ht_r, ht_g, ht_b = C['HDR_TXT']
 
         def new_story_page():
-            nonlocal page_num, page_has_image
+            nonlocal page_num
             page_num += 1
-            page_has_image = False
             pdf.add_page()
             _fill_bg(pdf, C)
-            _draw_corner_ornaments(pdf, C, margin=10, size=6)
             _draw_running_header(pdf, C, title)
             _draw_page_number(pdf, C, page_num)
             pdf.set_y(MARGIN_TOP + 8)
@@ -380,22 +425,29 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         for ch_idx, (chapter_title, paras) in enumerate(chapters):
             new_story_page()
 
-            # Chapter header — large bold text, no band
+            # Chapter header band
             if chapter_title:
                 pdf.ln(2)
-                pdf.set_font('DejaVu', style='B', size=16)
+                if has_fairy:
+                    pdf.set_font('Fairy', style='', size=17)
+                else:
+                    pdf.set_font('DejaVu', style='B', size=17)
                 pdf.set_text_color(tr, tg, tb)
                 pdf.set_x(MARGIN_OUTER)
-                pdf.multi_cell(CONTENT_W, 10, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
+                pdf.multi_cell(CONTENT_W, 11, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
 
-            # Chapter illustration: chapter[0]→img[1], chapter[1]→img[2], etc.
+            # ── Chapter image: ONE unique image per chapter, shown ONCE ───────
+            # chapter[0]→img[1], chapter[1]→img[2], ..., chapter[4]→img[5]
             ch_img = chapter_imgs[ch_idx] if ch_idx < len(chapter_imgs) else None
-            if ch_img:
-                _draw_square_image(pdf, C, ch_img, size=110, centered=True)
-                page_has_image = True
+            if ch_img and space_left() >= IMG_TOTAL:
+                _draw_wide_image(pdf, C, ch_img)
+            elif ch_img:
+                # Not enough space — start new page for image
+                new_story_page()
+                _draw_wide_image(pdf, C, ch_img)
 
-            # Body paragraphs
+            # Body paragraphs — continuation pages get NO image (pure text)
             for para in paras:
                 lines = pdf.multi_cell(CONTENT_W, 6.8, para, align='J',
                                        new_x='LMARGIN', new_y='NEXT', dry_run=True, output='LINES')
@@ -403,43 +455,37 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
 
                 if space_left() < text_h:
                     new_story_page()
-                    # Draw overflow image on continuation page if available
-                    if not page_has_image and overflow_img:
-                        _draw_square_image(pdf, C, overflow_img, size=80, centered=True)
-                        page_has_image = True
+                    # NO overflow image — continuation pages are text only
 
-                # Always reset font + color right before rendering
                 pdf.set_font('DejaVu', style='', size=11)
                 pdf.set_text_color(br, bg, bb)
                 pdf.set_x(MARGIN_OUTER)
                 pdf.multi_cell(CONTENT_W, 6.8, para, align='J', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
 
-        # ── Next-hook teaser ─────────────────────────────────────────────
+        # ── Next-hook teaser ─────────────────────────────────────────────────
         if next_hook:
             if space_left() < 60:
                 new_story_page()
             _draw_hook_box(pdf, C, next_hook)
 
-        # ── Final illustration ────────────────────────────────────────────
+        # ── Final illustration ────────────────────────────────────────────────
         if final_img:
-            if space_left() < 125:
+            if space_left() < IMG_TOTAL:
                 new_story_page()
             pdf.ln(4)
-            _draw_square_image(pdf, C, final_img, size=100, centered=True)
-            pdf.set_text_color(br, bg, bb)
+            _draw_wide_image(pdf, C, final_img)
 
-        # ── "The End" ─────────────────────────────────────────────────────
-        if space_left() < 40:
+        # ── "The End" ─────────────────────────────────────────────────────────
+        if space_left() < 45:
             new_story_page()
         _draw_ornament_divider(pdf, C)
-        pdf.set_font('DejaVu', style='B', size=22)
+        _title_font(22)
         pdf.set_text_color(tr, tg, tb)
         pdf.set_x(MARGIN_OUTER)
         pdf.multi_cell(CONTENT_W, 14, '✦  Конец  ✦', align='C', new_x='LMARGIN', new_y='NEXT')
         pdf.ln(6)
-        farewell_name = child_name if child_name else ''
-        farewell = f'{farewell_name}, до встречи в будущих приключениях!' if farewell_name else 'До встречи в будущих приключениях!'
+        farewell = f'{child_name}, до встречи в будущих приключениях!' if child_name else 'До встречи в будущих приключениях!'
         pdf.set_font('DejaVu', style='I', size=11)
         pdf.set_text_color(rr, rg, rb)
         pdf.set_x(MARGIN_OUTER)

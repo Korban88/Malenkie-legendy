@@ -29,7 +29,6 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         child = db.get(Child, payload['child_id'])
         if not child:
             raise ValueError('Child not found')
-        # Update preferences if provided for existing child
         for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
             val = payload.get(field)
             if val:
@@ -48,7 +47,6 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         )
     )
     if existing_child:
-        # Update preferences if provided
         for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
             val = payload.get(field)
             if val:
@@ -95,6 +93,8 @@ def generate_story(db: Session, payload: dict) -> Story:
     previous_recap = latest_story.recap if latest_story else []
 
     style = choose_style(child.age, payload.get('style') or child.preferred_style)
+    image_style = payload.get('image_style', 'watercolor')
+    purpose = payload.get('purpose', 'bedtime')
 
     story = Story(
         child_id=child.id,
@@ -117,7 +117,8 @@ def generate_story(db: Session, payload: dict) -> Story:
                 'parent_note': payload.get('parent_note') or child.parent_note,
                 'previous_memory': previous_memory,
                 'previous_recap': previous_recap,
-                # Child preferences for personalization
+                'image_style': image_style,
+                'purpose': purpose,
                 'favorite_animal': child.favorite_animal or payload.get('favorite_animal') or 'кот',
                 'favorite_color': child.favorite_color or payload.get('favorite_color') or 'синий',
                 'hobby': child.hobby or payload.get('hobby') or 'рисование',
@@ -125,7 +126,7 @@ def generate_story(db: Session, payload: dict) -> Story:
             }
         )
 
-        images_urls: list[str] = []
+        images_urls: list[str | None] = []
         photo_hash = None
         try:
             images_urls, photo_hash = generate_images(
@@ -133,9 +134,10 @@ def generate_story(db: Session, payload: dict) -> Story:
                 age=child.age,
                 style=style,
                 photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
+                char_desc=text_payload.get('char_desc', ''),
                 scene_prompts=text_payload.get('image_prompts', []),
-                count=8,
-                image_style=payload.get('image_style', 'watercolor'),
+                count=5,
+                image_style=image_style,
             )
             if photo_hash:
                 child.photo_hash = photo_hash

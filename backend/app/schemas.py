@@ -32,7 +32,7 @@ class StoryGenerateResponse(BaseModel):
     recap: list[str]
     memory: dict
     next_hook: str | None
-    images_urls: list[str]
+    images_urls: list[str | None]
     pdf_url: str | None
 
 
