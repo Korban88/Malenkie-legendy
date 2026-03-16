@@ -449,19 +449,19 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             # Body paragraphs — continuation pages get NO image (pure text)
             for para in paras:
                 # Set body font BEFORE dry_run so line-count estimate matches actual render font
-                pdf.set_font('DejaVu', style='', size=11)
+                pdf.set_font('DejaVu', style='', size=12)
                 pdf.set_text_color(br, bg, bb)
-                lines = pdf.multi_cell(CONTENT_W, 6.8, para, align='J',
+                lines = pdf.multi_cell(CONTENT_W, 7.5, para, align='J',
                                        new_x='LMARGIN', new_y='NEXT', dry_run=True, output='LINES')
-                text_h = len(lines) * 6.8 + 4
+                text_h = len(lines) * 7.5 + 4
 
                 if space_left() < text_h:
                     new_story_page()
-                    pdf.set_font('DejaVu', style='', size=11)
+                    pdf.set_font('DejaVu', style='', size=12)
                     pdf.set_text_color(br, bg, bb)
 
                 pdf.set_x(MARGIN_OUTER)
-                pdf.multi_cell(CONTENT_W, 6.8, para, align='J', new_x='LMARGIN', new_y='NEXT')
+                pdf.multi_cell(CONTENT_W, 7.5, para, align='J', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
 
         # ── Next-hook teaser ─────────────────────────────────────────────────
