@@ -177,8 +177,8 @@ def _build_char_desc(name: str, age: int, gender: str) -> str:
     gender_word = 'girl' if gender == 'female' else ('boy' if gender == 'male' else 'child')
 
     return (
-        f'{age}-year-old {gender_word} with fair light skin, {hair}, {eyes} eyes, '
-        f'wearing {outfit}'
+        f'{age}-year-old {gender_word} with fair pale light skin complexion (European), '
+        f'{hair}, {eyes} eyes, wearing {outfit}'
     )
 
 

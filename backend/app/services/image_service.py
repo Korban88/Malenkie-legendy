@@ -12,81 +12,79 @@ settings = get_settings()
 
 _IMG_STYLE_SUFFIX = {
     'ghibli': (
-        'Studio Ghibli hand-painted animation cel, Hayao Miyazaki style. '
-        'LINEART: clean ink outlines with slight line-weight variation. '
-        'PALETTE LOCKED: warm ochre sunlight, deep forest green, sky cerulean, cream white, rust red — same palette in every scene. '
-        'SHADING: soft 2-tone cel shading, no gradients. '
-        'TEXTURE: subtle film grain on backgrounds. '
-        'LIGHTING: warm golden-hour glow from upper-right in every image. '
-        'Detailed organic backgrounds, expressive chubby character proportions'
+        'animated film scene in the style of Studio Ghibli "My Neighbor Totoro" (1988) by Hayao Miyazaki: '
+        'clean cel animation, warm golden sunlight, bright lush green nature, '
+        'soft expressive round characters with large eyes, smooth ink outlines, '
+        'bright warm joyful uplifting atmosphere, vibrant cheerful colours, no dark tones'
     ),
     'disney': (
-        'classic Disney fairy-tale animation cel, 1950s–1990s style. '
-        'LINEART: smooth fluid ink outlines, consistent line weight throughout. '
-        'PALETTE LOCKED: royal blue, antique gold, crimson, forest green, ivory — same palette in every scene. '
-        'SHADING: clean 2-tone cel fills, no gradients. '
-        'LIGHTING: warm magical glow, rim-light on characters. '
-        'Elegant character proportions, lush decorative backgrounds'
+        'animated fairy-tale scene in the style of classic Disney "Sleeping Beauty" (1959): '
+        'fluid elegant ink-outlined characters, bright rich jewel-tone colours, '
+        'sparkling warm magical light, graceful rounded shapes, '
+        'bright cheerful uplifting atmosphere, vivid saturated colours throughout'
     ),
     'pixar': (
-        'Pixar 3D CG animation film still, consistent render style. '
-        'MATERIAL: subsurface skin scattering, soft cloth texture. '
-        'PALETTE LOCKED: warm amber highlights, cool blue-grey shadows, saturated mid-tones — same palette in every scene. '
-        'LIGHTING: cinematic soft three-point light, warm key from upper-left. '
-        'RENDERING: photorealistic textures, stylized character shapes. '
-        'Strong depth of field, bokeh background'
+        'animated film scene in the style of Pixar "Brave" (2012) and "Up" (2009): '
+        'warm cinematic sunlight, vivid saturated bright colours, '
+        'expressive stylised characters with large eyes, detailed rich cheerful backgrounds, '
+        'bright uplifting joyful atmosphere, warm golden-hour glow'
     ),
     'watercolor': (
-        'traditional watercolor children\'s-book illustration, identical style across all scenes. '
-        'TECHNIQUE: wet-on-wet washes, ink outlines bleeding slightly into paint. '
-        'PALETTE LOCKED: warm amber, soft sage green, dusty sky-blue, ivory, warm sienna — same palette every image. '
-        'TEXTURE: visible paper grain, white highlights left unpainted. '
-        'LINEART: loose confident ink lines. '
-        'LIGHTING: soft diffused natural light from upper-left, no harsh shadows'
+        'bright cheerful children\'s book watercolour illustration '
+        'in the style of Quentin Blake\'s illustrations for Roald Dahl books: '
+        'energetic ink lines with bright colourful watercolour washes, '
+        'warm golden natural light, loose expressive brushwork, '
+        'vivid warm cheerful uplifting mood, white paper showing as highlights'
     ),
     'cartoon': (
-        'bold cartoon illustration, identical graphic style across all scenes. '
-        'LINEART: thick uniform black outlines, same weight everywhere. '
-        'PALETTE LOCKED: bright red, sunshine yellow, cobalt blue, black, white — same palette every image. '
-        'SHADING: flat colour fills only, zero gradients. '
-        'STYLE: geometric simplified shapes, large round eyes. '
-        'COMPOSITION: strong graphic silhouettes, flat background shapes'
+        'bright bold children\'s cartoon illustration '
+        'in the style of classic Cartoon Network shows and "The Smurfs": '
+        'thick clean black outlines, flat bright saturated primary colours, '
+        'simple bold friendly shapes, expressive large eyes, '
+        'clean graphic look, bright sunny cheerful atmosphere, vivid uplifting colours'
     ),
     'storybook': (
-        'classic illustrated children\'s storybook, consistent across all scenes. '
-        'TECHNIQUE: fine pen crosshatching with warm watercolour washes. '
-        'PALETTE LOCKED: golden amber, forest brown, moss green, cream, deep navy — same palette every image. '
-        'TEXTURE: aged paper, visible ink hatching, decorative borders. '
-        'LINEART: fine detailed pen lines. '
-        'LIGHTING: warm candle-golden glow, cosy atmosphere'
+        'classic illustrated children\'s storybook scene '
+        'in the style of E.H. Shepard\'s Winnie-the-Pooh illustrations: '
+        'warm pen-and-ink lines with golden watercolour washes, '
+        'bright cosy warm light, friendly rounded character shapes, '
+        'nostalgic cheerful uplifting atmosphere, warm amber and green tones'
     ),
     'soviet': (
-        'Soviet Soyuzmultfilm cel animation 1969, Roman Kachanov Cheburashka style, identical in every scene. '
-        'LINEART: thick uniform black ink outlines, slightly wobbly hand-drawn quality. '
-        'PALETTE LOCKED: warm ochre, burnt sienna, sage green, cream, dusty rose, sky blue — ONLY these colours, every image. '
-        'SHADING: flat 2D solid cel fills, zero gradients, no blending. '
-        'TEXTURE: visible cel-paint grain, slight colour registration offset. '
-        'CHARACTERS: chubby rounded shapes, large soulful eyes, gentle expressions. '
-        'BACKGROUNDS: simple geometric flat shapes, minimal detail'
+        'Soviet children\'s animated cartoon scene '
+        'in the exact style of Soyuzmultfilm "Cheburashka" (1966) and "Hedgehog in the Fog" (1975): '
+        'thick clean black ink outlines, flat bright colours — sunshine yellow, '
+        'bright red, sky blue, grass green, warm orange — no dark tones, '
+        'simple rounded friendly character shapes with large soulful eyes, '
+        'flat graphic clean look, bright warm sunny cheerful joyful atmosphere'
     ),
 }
 
 _BASE_QUALITY = (
-    "children's book illustration, safe for children, no text, no watermark, "
-    "wide establishing shot, full body characters visible in scene, "
-    "high quality, detailed, professional illustration, "
-    "correct human anatomy, exactly five fingers on each hand, no extra limbs, only named characters in scene"
+    "children's book illustration, bright vibrant cheerful colours, warm sunlit happy atmosphere, "
+    "wide establishing shot showing full scene, full body characters visible, "
+    "high quality detailed professional illustration, safe for children, "
+    "correct anatomy, exactly five fingers, "
+    "only the named hero and the named animal companion in the scene — no extra people, no background crowd"
 )
 
-# Artifacts to avoid in human characters
+# Used for Stability AI and Pollinations (DALL-E 3 ignores negative_prompt parameter)
 _NEGATIVE_PROMPT = (
-    'close-up portrait, headshot, face only, head only, bust portrait, extreme close-up, '
-    'beard, mustache, goatee, facial hair, stubble on child, '
-    'tails on humans, animal features on human characters, extra limbs, deformed hands, '
-    'extra fingers, six fingers, mutated body, bad anatomy, disfigured, '
-    'poorly drawn face, extra arms, extra legs, cloned face, '
-    'instrument held incorrectly, playing flute through nose, wrong hand position, '
-    'watermark, signature, text, username, blurry, low quality, ugly'
+    'color swatch, color chart, color palette diagram, palette grid, color picker, '
+    'dark gloomy scene, dark atmosphere, horror, night scene, shadows, '
+    'close-up portrait, headshot, face only, extreme close-up, '
+    'dark skin on fair-skinned character, unexpected skin tone change, '
+    'extra background people, crowd, strangers, unnamed characters, '
+    'beard, mustache, stubble, facial hair on child, '
+    'extra limbs, deformed hands, extra fingers, six fingers, bad anatomy, disfigured, '
+    'watermark, signature, text label, username, blurry, low quality, ugly, '
+    'UI elements, website screenshot, digital interface mockup, computer window'
+)
+
+# Inline "avoid" text embedded in every DALL-E 3 prompt (since it ignores negative_prompt)
+_DALLE_AVOID = (
+    'Do NOT show: colour swatches, palette grids, dark or gloomy scenes, '
+    'extra unnamed people in background, close-up face portraits'
 )
 
 
@@ -98,28 +96,27 @@ def _save_image_bytes(data: bytes, out_dir: Path) -> str:
     return filename
 
 
-_CONSISTENCY_ANCHOR = (
-    'VISUAL CONSISTENCY: this illustration is part of a single storybook — '
-    'it must match the EXACT same art style, locked colour palette, line-art technique, '
-    'character proportions, and lighting direction as all other images in this story'
-)
-
-
 def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'watercolor') -> str:
-    """Build final prompt: locked style + scene action + character + consistency anchor."""
+    """Build prompt: named style reference → scene action → character → quality → anti-artifact."""
     style = _IMG_STYLE_SUFFIX.get(image_style, _IMG_STYLE_SUFFIX['watercolor'])
+    consistency = (
+        'This is one illustration from a single children\'s storybook — '
+        'identical art style, bright cheerful colours, and character proportions throughout'
+    )
     if char_desc:
         base = (f"{style}. "
                 f"{scene_prompt}. "
-                f"The main character is {char_desc}. "
-                f"{_CONSISTENCY_ANCHOR}. "
-                f"{_BASE_QUALITY}")
+                f"Main character: {char_desc}. "
+                f"{consistency}. "
+                f"{_BASE_QUALITY}. "
+                f"{_DALLE_AVOID}.")
     else:
         base = (f"{style}. "
                 f"{scene_prompt}. "
-                f"{_CONSISTENCY_ANCHOR}. "
-                f"{_BASE_QUALITY}")
-    return base[:3000]
+                f"{consistency}. "
+                f"{_BASE_QUALITY}. "
+                f"{_DALLE_AVOID}.")
+    return base[:3500]
 
 
 def generate_images(child_name, age, style, photo_base64, char_desc='',
