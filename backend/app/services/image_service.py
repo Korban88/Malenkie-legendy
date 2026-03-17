@@ -24,10 +24,14 @@ _IMG_STYLE_SUFFIX = {
         'bright cheerful uplifting atmosphere, vivid saturated colours throughout'
     ),
     'pixar': (
-        'animated film scene in the style of Pixar "Brave" (2012) and "Up" (2009): '
-        'warm cinematic sunlight, vivid saturated bright colours, '
-        'expressive stylised characters with large eyes, detailed rich cheerful backgrounds, '
-        'bright uplifting joyful atmosphere, warm golden-hour glow'
+        'premium cinematic 3D animated family fantasy feature film, '
+        'top-tier modern animation studio quality: '
+        'warm soft global illumination with volumetric depth, '
+        'rich warm colour grading with vivid saturation, '
+        'expressive stylised characters with polished high-detail faces, '
+        'large emotive eyes, emotionally readable expressions and body language, '
+        'soft subsurface skin glow, cinematic wide-angle composition, '
+        'lush detailed environment, bright cheerful uplifting premium children\'s fantasy'
     ),
     'watercolor': (
         'bright cheerful children\'s book watercolour illustration '
@@ -81,10 +85,12 @@ _NEGATIVE_PROMPT = (
     'UI elements, website screenshot, digital interface mockup, computer window'
 )
 
-# Inline "avoid" text embedded in every DALL-E 3 prompt (since it ignores negative_prompt)
+# Inline "avoid" — embedded in every DALL-E 3 prompt (DALL-E 3 ignores negative_prompt param)
 _DALLE_AVOID = (
-    'Do NOT show: colour swatches, palette grids, dark or gloomy scenes, '
-    'extra unnamed people in background, close-up face portraits'
+    'Do NOT include: colour swatches, palette grids, comic panels, split-screen layout, '
+    'collage, storyboard grid, dark or gloomy scenes, extra unnamed background people, '
+    'extreme close-up face portraits, floating text labels, captions, UI windows, '
+    'duplicate panels, watermarks, random props not in the scene'
 )
 
 
@@ -97,26 +103,32 @@ def _save_image_bytes(data: bytes, out_dir: Path) -> str:
 
 
 def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'watercolor') -> str:
-    """Build prompt: named style reference → scene action → character → quality → anti-artifact."""
+    """4-block: A(Style) + B(Character — front-loaded) + C(Scene) + D(Quality/Negative).
+
+    Character block comes BEFORE the scene so DALL-E 3 anchors on character appearance
+    before reading the action, reducing face/outfit drift across illustrations.
+    """
     style = _IMG_STYLE_SUFFIX.get(image_style, _IMG_STYLE_SUFFIX['watercolor'])
-    consistency = (
-        'This is one illustration from a single children\'s storybook — '
-        'identical art style, bright cheerful colours, and character proportions throughout'
-    )
+    parts = [style]
+
+    # B — Character block (front-loaded for consistency)
     if char_desc:
-        base = (f"{style}. "
-                f"{scene_prompt}. "
-                f"Main character: {char_desc}. "
-                f"{consistency}. "
-                f"{_BASE_QUALITY}. "
-                f"{_DALLE_AVOID}.")
-    else:
-        base = (f"{style}. "
-                f"{scene_prompt}. "
-                f"{consistency}. "
-                f"{_BASE_QUALITY}. "
-                f"{_DALLE_AVOID}.")
-    return base[:3500]
+        parts.append(
+            f"FIXED CHARACTER APPEARANCE — same in every illustration of this book: {char_desc}"
+        )
+
+    # C — Scene
+    parts.append(scene_prompt)
+
+    # D — Consistency + quality + anti-artifact
+    parts.append(
+        "Same art style, colour tones, and character proportions as all other "
+        "illustrations in this storybook — one coherent visual universe"
+    )
+    parts.append(_BASE_QUALITY)
+    parts.append(_DALLE_AVOID)
+
+    return ". ".join(parts)[:3500]
 
 
 def generate_images(child_name, age, style, photo_base64, char_desc='',

@@ -1,6 +1,7 @@
 import base64
 import os
 import asyncio
+from pathlib import Path
 
 import httpx
 from aiogram import Bot, Dispatcher, F
@@ -14,10 +15,28 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     BufferedInputFile,
+    FSInputFile,
 )
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8010")
+
+STEP_IMAGES_DIR = Path('/opt/malenkie-legendy/static/ui')
+STEP_IMAGES: dict[str, str] = {
+    'welcome':       'welcome.png',
+    'ask_name':      'ask_name.png',
+    'ask_gender':    'ask_gender.png',
+    'ask_purpose':   'ask_purpose.png',
+    'ask_style':     'ask_style.png',
+    'ask_img_style': 'ask_img_style.png',
+    'ask_animal':    'ask_animal.png',
+    'ask_color':     'ask_color.png',
+    'ask_hobby':     'ask_hobby.png',
+    'ask_place':     'ask_place.png',
+    'ask_photo':     'ask_photo.png',
+    'generating':    'generating.png',
+}
+
 
 def age_word(age: int) -> str:
     """Правильное склонение: 1 год, 2-4 года, 5+ лет."""
@@ -26,6 +45,39 @@ def age_word(age: int) -> str:
     if age % 10 in (2, 3, 4) and age % 100 not in (12, 13, 14):
         return f"{age} года"
     return f"{age} лет"
+
+
+def _genitive(name: str) -> str:
+    """Rough Russian name → genitive case (родительный падеж) heuristic."""
+    if not name:
+        return name
+    last = name[-1].lower()
+    if last == 'а':
+        pre = name[-2].lower() if len(name) > 1 else ''
+        # After shibilants (ж/ш/щ/ч) and г/к/х → -и; otherwise → -ы
+        return name[:-1] + ('и' if pre in 'жшщчгкх' else 'ы')
+    if last == 'я':
+        return name[:-1] + 'и'
+    if last == 'й':
+        return name[:-1] + 'я'
+    if last == 'ь':
+        return name[:-1] + 'я'
+    # Consonant ending — typically masculine names like Иван, Максим
+    if last in 'бвгджзклмнпрстфхцчшщ':
+        return name + 'а'
+    return name
+
+
+async def _answer_step(target: Message, step_id: str, text: str, **kwargs) -> Message:
+    """Send a step illustration with caption. Falls back to text-only if image missing."""
+    img_path = STEP_IMAGES_DIR / STEP_IMAGES.get(step_id, '')
+    if img_path.exists():
+        return await target.answer_photo(
+            photo=FSInputFile(img_path),
+            caption=text,
+            **kwargs,
+        )
+    return await target.answer(text, **kwargs)
 
 
 bot = Bot(BOT_TOKEN)
@@ -203,7 +255,8 @@ def kb_after_story(pdf_url: str | None, episode: int, child_name: str) -> Inline
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(
+    await _answer_step(
+        message, 'welcome',
         "👋 Привет! Я создаю персональные сказки для детей.\n\n"
         "✨ Каждая сказка — уникальная история, где главный герой — твой ребёнок!\n"
         "📚 Вдохновлено лучшими авторами: Астрид Линдгрен, Роальд Даль, Туве Янссон.\n\n"
@@ -216,7 +269,7 @@ async def cmd_start(message: Message, state: FSMContext):
 async def cb_start_story(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer("📝 Как зовут ребёнка?")
+    await _answer_step(call.message, 'ask_name', "📝 Как зовут ребёнка?")
     await state.set_state(Form.name)
     await call.answer()
 
@@ -224,7 +277,7 @@ async def cb_start_story(call: CallbackQuery, state: FSMContext):
 @dp.message(F.text.lower().contains("сказка"))
 async def text_skazka(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("📝 Как зовут ребёнка?")
+    await _answer_step(message, 'ask_name', "📝 Как зовут ребёнка?")
     await state.set_state(Form.name)
 
 
@@ -255,7 +308,8 @@ async def cb_age(call: CallbackQuery, state: FSMContext):
     age = int(call.data.split(":")[1])
     await state.update_data(age=age)
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_gender',
         f"Отлично, {age} лет — запомнил! 👶\n\nМальчик или девочка?",
         reply_markup=kb_gender(),
     )
@@ -273,7 +327,8 @@ async def cb_gender(call: CallbackQuery, state: FSMContext):
     gender_labels = {"male": "Мальчик 👦", "female": "Девочка 👧"}
     await state.update_data(gender=gender)
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_purpose',
         f"{gender_labels.get(gender, gender)} — понял!\n\n"
         "✨ Какую роль сыграет эта сказка для вашего ребёнка?\n\n"
         "Выбери то, что сейчас важнее всего:",
@@ -300,7 +355,8 @@ async def cb_purpose(call: CallbackQuery, state: FSMContext):
     }
     await state.update_data(purpose=purpose)
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_style',
         f"{purpose_labels.get(purpose, purpose)} — учту!\n\nКакой стиль сказки выбираем? 📖",
         reply_markup=kb_style(),
     )
@@ -317,7 +373,8 @@ async def cb_style(call: CallbackQuery, state: FSMContext):
     style = call.data.split(":")[1]
     await state.update_data(style=style)
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_img_style',
         "🖼 Выбери стиль иллюстраций:\n\n"
         "• 🎨 Акварель — нежная ручная акварель\n"
         "• 🌸 Студия Гибли — аниме, «Мой сосед Тоторо»\n"
@@ -352,11 +409,12 @@ async def cb_img_style(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     name = data.get("child_name", "Герой")
 
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_animal',
         f"{style_names.get(img_style, img_style)} — отличный выбор! 🌟\n\n"
-        f"🐾 Какое любимое животное у {name}?\n\n"
+        f"🐾 Какое любимое животное у {_genitive(name)}?\n\n"
         "Напиши любое — оно станет волшебным другом в сказке!\n"
-        "(например: кот, дракон, единорог, лиса, черепаха...)"
+        "(например: кот, дракон, единорог, лиса, черепаха...)",
     )
     await state.set_state(Form.animal)
     await call.answer()
@@ -373,7 +431,8 @@ async def form_animal(message: Message, state: FSMContext):
         await message.answer("Напиши название любимого животного 🐾")
         return
     await state.update_data(favorite_animal=animal)
-    await message.answer(
+    await _answer_step(
+        message, 'ask_color',
         f"Отличный выбор — {animal}! 🌟\n\nКакой любимый цвет?",
         reply_markup=kb_color(),
     )
@@ -393,7 +452,8 @@ async def cb_color(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     name = data.get("child_name", "Герой")
 
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_hobby',
         f"{color.capitalize()} — красивый выбор! 🎨\n\n"
         f"Чем {name} любит заниматься больше всего?",
         reply_markup=kb_hobby(),
@@ -411,7 +471,8 @@ async def cb_hobby(call: CallbackQuery, state: FSMContext):
     hobby = call.data.split(":", 1)[1]
     await state.update_data(hobby=hobby)
     await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_place',
         "Супер! Это станет особой способностью героя 💪\n\n"
         "Где любимое место для приключений?",
         reply_markup=kb_place(),
@@ -433,9 +494,10 @@ async def cb_place(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     name = data.get("child_name", "Герой")
 
-    await call.message.answer(
+    await _answer_step(
+        call.message, 'ask_photo',
         f"Отлично, там и развернётся главное событие! 🗺\n\n"
-        f"📷 Хочешь добавить фото {name}?\n"
+        f"📷 Хочешь добавить фото {_genitive(name)}?\n"
         "Тогда иллюстрации будут генерироваться с его/её внешностью как референсом.",
         reply_markup=kb_photo_choice(),
     )
@@ -535,15 +597,16 @@ async def _generate(trigger_message: Message, state: FSMContext):
         'confidence': 'поверить в себя', 'bedtime': 'уютная сказка на ночь',
     }
 
-    await trigger_message.answer(
-        f"✨ Создаю персональную сказку для {child_name}...\n\n"
+    await _answer_step(
+        trigger_message, 'generating',
+        f"✨ Создаю персональную сказку для {_genitive(child_name)}...\n\n"
         f"🎯 Цель: {purpose_labels.get(purpose, purpose)}\n"
         f"🐾 Любимое животное: {animal}\n"
         f"🎨 Любимый цвет: {color}\n"
         f"💪 Любимое занятие: {hobby}\n"
         f"🗺 Место приключений: {place}\n"
         f"🖼 Стиль иллюстраций: {img_style_labels.get(image_style, image_style)}\n\n"
-        "⏳ Это займёт 3–5 минут — не закрывай чат, волшебство уже в пути! ✨"
+        "⏳ Это займёт 3–5 минут — не закрывай чат, волшебство уже в пути! ✨",
     )
 
     payload = {
@@ -583,15 +646,15 @@ async def _generate(trigger_message: Message, state: FSMContext):
     story_text  = result.get("story_text", "")
     pdf_url     = result.get("pdf_url")
     raw_urls    = result.get("images_urls") or []
-    # Pad to 5 slots so positional indexing is always safe (None = image failed)
-    images_urls: list[str | None] = list(raw_urls) + [None] * max(0, 5 - len(raw_urls))
+    # Pad to 6 slots so positional indexing is always safe (None = image failed)
+    images_urls: list[str | None] = list(raw_urls) + [None] * max(0, 6 - len(raw_urls))
     episode     = result.get("episode_number", 1)
     title       = result.get("title", "")
     next_hook   = result.get("next_hook")
 
     if episode > 1:
         await trigger_message.answer(
-            f"📚 *Эпизод {episode}: продолжение приключений {child_name}!*\n\n"
+            f"📚 *Эпизод {episode}: продолжение приключений {_genitive(child_name)}!*\n\n"
             "История продолжается с того места, где остановилась...",
             parse_mode="Markdown",
         )
@@ -617,11 +680,10 @@ async def _generate(trigger_message: Message, state: FSMContext):
     if images_urls[0]:
         await _send_image(trigger_message, images_urls[0], caption=f"📖 {title}")
 
-    # ── Главы: картинка → текст (images[1-3] для первых 3 глав) ──────────
-    # Главы 4-5 идут без картинки (текст, который держит в напряжении до конца)
+    # ── Главы: картинка → текст (images[1-4] для первых 4 глав) ──────────
     for ch_idx, (ch_title, ch_text) in enumerate(chapters):
-        img_idx = ch_idx + 1  # [1],[2],[3] → главы 0,1,2
-        ch_url = images_urls[img_idx] if 1 <= img_idx <= 3 else None
+        img_idx = ch_idx + 1  # [1],[2],[3],[4] → главы 0,1,2,3
+        ch_url = images_urls[img_idx] if 1 <= img_idx <= 4 else None
         if ch_url:
             caption = ch_title if ch_title else f"Глава {ch_idx + 1}"
             await _send_image(trigger_message, ch_url, caption=caption)
@@ -634,9 +696,9 @@ async def _generate(trigger_message: Message, state: FSMContext):
     if next_hook:
         await trigger_message.answer(f"💫 _{next_hook}_", parse_mode="Markdown")
 
-    # ── Финальная иллюстрация: images[4] ─────────────────────────────────
-    if images_urls[4]:
-        await _send_image(trigger_message, images_urls[4], caption="🏆 Финал")
+    # ── Финальная иллюстрация: images[5] ─────────────────────────────────
+    if images_urls[5]:
+        await _send_image(trigger_message, images_urls[5], caption="🏆 Финал")
 
     # ── PDF и кнопки ──────────────────────────────────────────────────────
     await trigger_message.answer(

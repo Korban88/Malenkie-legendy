@@ -129,15 +129,48 @@ _IMG_STYLE_FOR_PROMPT = {
     'soviet':     'Soviet Soyuzmultfilm animation style exactly as in Cheburashka 1966, classic USSR cartoon, thick clean outlines, warm muted earthy palette, flat 2D, 1970s aesthetic',
 }
 
+# Animal visual descriptions for character consistency in image prompts
+_ANIMAL_VISUAL: dict[str, str] = {
+    'кот':        'small tabby cat with bright amber eyes and striped grey-orange fur',
+    'кошка':      'small tabby cat with bright amber eyes and striped grey-orange fur',
+    'котёнок':    'tiny fluffy kitten with wide bright eyes and soft striped tabby pattern',
+    'пёс':        'medium friendly dog with floppy ears, warm brown eyes, and golden-tan fur',
+    'собака':     'medium friendly dog with floppy ears, warm brown eyes, and golden-tan fur',
+    'щенок':      'small fluffy puppy with big soft eyes and golden-tan fur',
+    'лиса':       'bright orange fox with a bushy white-tipped tail and sharp green eyes',
+    'лисёнок':    'small bright orange fox kit with oversized pointy ears and curious green eyes',
+    'заяц':       'fluffy grey rabbit with long upright ears and bright curious eyes',
+    'зайчик':     'small fluffy white rabbit with long upright ears and curious bright eyes',
+    'кролик':     'fluffy white rabbit with long upright ears and bright curious eyes',
+    'медведь':    'large friendly brown bear with a round face and warm dark eyes',
+    'медвежонок': 'small plump teddy-bear cub with round ears and warm dark eyes',
+    'волк':       'silvery-grey wolf with piercing yellow eyes and a flowing bushy tail',
+    'дракон':     'small friendly dragon with emerald-green scales, tiny wings, and a cheerful expression',
+    'единорог':   'small white unicorn with a shimmering silver horn, flowing mane, and gentle blue eyes',
+    'черепаха':   'small green tortoise with a patterned shell and wise bright eyes',
+    'черепашка':  'tiny green tortoise with a patterned shell and wise bright eyes',
+    'попугай':    'bright tropical parrot with vivid red-green-blue feathers and a curious tilted head',
+    'попугайчик': 'small bright parakeet with vivid green-yellow feathers and curious round eyes',
+    'сова':       'round fluffy owl with large amber eyes and spotted brown-cream feathers',
+    'белка':      'small rusty-red squirrel with a huge bushy tail and bright black eyes',
+    'ёжик':       'tiny hedgehog with soft brown spines, a pink nose, and small curious eyes',
+    'лошадь':     'chestnut horse with a flowing dark mane, warm brown eyes, and a graceful build',
+    'пони':       'small chestnut pony with a flowing mane, warm eyes, and a friendly expression',
+    'слон':       'small friendly elephant with large floppy ears, long trunk, and wise gentle eyes',
+    'обезьяна':   'small golden-brown monkey with big bright eyes and a long curling tail',
+    'тигр':       'young tiger with bright orange-and-black striped fur and vivid green eyes',
+    'хомяк':      'small round hamster with puffy cheeks, tiny paws, and bright curious eyes',
+}
+
 _STYLE_WORDS_RE = re.compile(
     r'\b(magical|tender|adventure|epic|fairy[\s_]?tale|magic|nature|space)\b', re.IGNORECASE
 )
 _ENGLISH_WORDS_RE = re.compile(r'(?<![а-яёА-ЯЁ])\b[a-zA-Z]{2,}\b(?![а-яёА-ЯЁ])')
 
 
-def _build_char_desc(name: str, age: int, gender: str) -> str:
+def _build_char_desc(name: str, age: int, gender: str, animal: str = 'кот') -> str:
     """
-    Build a SPECIFIC, DETERMINISTIC character description.
+    Build a SPECIFIC, DETERMINISTIC character description including the animal companion.
     Same name → always same hair/eyes/clothes → DALL-E draws the same child.
     """
     seed = sum(ord(c) for c in name)
@@ -176,9 +209,16 @@ def _build_char_desc(name: str, age: int, gender: str) -> str:
     outfit = clothes[(seed // 7) % len(clothes)]
     gender_word = 'girl' if gender == 'female' else ('boy' if gender == 'male' else 'child')
 
+    animal_key = animal.lower().strip()
+    animal_visual = _ANIMAL_VISUAL.get(
+        animal_key,
+        f'small friendly {animal_key} with bright expressive eyes',
+    )
+
     return (
         f'{age}-year-old {gender_word} with fair pale light skin complexion (European), '
-        f'{hair}, {eyes} eyes, wearing {outfit}'
+        f'{hair}, {eyes} eyes, wearing {outfit}. '
+        f'Constant animal companion: {animal_visual} — always beside the hero, same in every illustration'
     )
 
 
@@ -519,6 +559,7 @@ def generate_story_payload(payload: dict) -> dict:
     result['story_text'] = story
     # Inject deterministic char_desc so image_service can prefix every prompt consistently
     result['char_desc'] = _build_char_desc(
-        payload['child_name'], payload['age'], payload.get('gender', 'neutral')
+        payload['child_name'], payload['age'], payload.get('gender', 'neutral'),
+        payload.get('favorite_animal', 'кот'),
     )
     return result
