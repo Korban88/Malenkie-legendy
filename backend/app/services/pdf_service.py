@@ -284,20 +284,11 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         regular = _find_font(_REGULAR_CANDIDATES, 'regular')
         bold = _find_font(_BOLD_CANDIDATES, 'bold')
         italic_path = next((c for c in _ITALIC_CANDIDATES if Path(c).exists()), regular)
-        fairy_font = _ensure_fairy_font()
-
         pdf = FPDF()
         pdf.set_auto_page_break(auto=False)
         pdf.add_font('DejaVu', style='',  fname=regular)
         pdf.add_font('DejaVu', style='B', fname=bold)
         pdf.add_font('DejaVu', style='I', fname=italic_path)
-        has_fairy = False
-        if fairy_font:
-            try:
-                pdf.add_font('Fairy', style='', fname=fairy_font)
-                has_fairy = True
-            except Exception as e:
-                logger.warning('Fairy font load failed: %s', e)
 
         local_images: list[Path | None] = [_url_to_local_path(u) for u in image_urls]
 
@@ -321,10 +312,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         ht_r, ht_g, ht_b = C['HDR_TXT']
 
         def _title_font(size: float) -> None:
-            if has_fairy:
-                pdf.set_font('Fairy', style='', size=size)
-            else:
-                pdf.set_font('DejaVu', style='B', size=size)
+            pdf.set_font('DejaVu', style='B', size=size)
 
         # ── PAGE 1: Cover ─────────────────────────────────────────────────────
         pdf.add_page()
@@ -433,10 +421,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 pdf.set_line_width(0.6)
                 pdf.line(MARGIN_OUTER, pdf.get_y(), PAGE_W - MARGIN_OUTER, pdf.get_y())
                 pdf.ln(5)
-                if has_fairy:
-                    pdf.set_font('Fairy', style='', size=23)
-                else:
-                    pdf.set_font('DejaVu', style='B', size=23)
+                pdf.set_font('DejaVu', style='B', size=23)
                 pdf.set_text_color(tr, tg, tb)
                 pdf.set_x(MARGIN_OUTER)
                 pdf.multi_cell(CONTENT_W, 14, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
@@ -447,19 +432,13 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 pdf.line(MARGIN_OUTER + 20, pdf.get_y(), PAGE_W - MARGIN_OUTER - 20, pdf.get_y())
                 pdf.ln(10)
 
-            # ── Chapter image: ONE unique image per chapter, shown ONCE ───────
-            # chapter[0]→img[1], chapter[1]→img[2], ..., chapter[4]→img[5]
+            # ── Image + body paragraphs on the same page as the header ────────
+            # Image is inserted AFTER the first paragraph so header is never
+            # left alone on a page. If image doesn't fit anywhere, it's skipped.
             ch_img = chapter_imgs[ch_idx] if ch_idx < len(chapter_imgs) else None
-            if ch_img and space_left() >= IMG_TOTAL:
-                _draw_wide_image(pdf, C, ch_img)
-            elif ch_img:
-                # Not enough space — start new page for image
-                new_story_page()
-                _draw_wide_image(pdf, C, ch_img)
+            img_placed = not ch_img  # True means no action needed
 
-            # Body paragraphs — continuation pages get NO image (pure text)
-            for para in paras:
-                # Set body font BEFORE dry_run so line-count estimate matches actual render font
+            for para_idx, para in enumerate(paras):
                 pdf.set_font('DejaVu', style='', size=12)
                 pdf.set_text_color(br, bg, bb)
                 lines = pdf.multi_cell(CONTENT_W, 7.5, para, align='J',
@@ -469,12 +448,21 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 if space_left() < text_h:
                     new_story_page()
 
-                # Always re-set font right before actual render (guard against any state drift)
                 pdf.set_font('DejaVu', style='', size=12)
                 pdf.set_text_color(br, bg, bb)
                 pdf.set_x(MARGIN_OUTER)
                 pdf.multi_cell(CONTENT_W, 7.5, para, align='J', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
+
+                # Insert image after first paragraph when space allows
+                if not img_placed and para_idx == 0:
+                    if space_left() >= IMG_TOTAL:
+                        _draw_wide_image(pdf, C, ch_img)
+                        img_placed = True
+                    elif space_left() < 30:  # barely anything left — try on next page
+                        new_story_page()
+                        _draw_wide_image(pdf, C, ch_img)
+                        img_placed = True
 
         # ── Next-hook teaser ─────────────────────────────────────────────────
         if next_hook:
