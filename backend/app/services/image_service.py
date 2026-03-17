@@ -12,55 +12,107 @@ settings = get_settings()
 
 _IMG_STYLE_SUFFIX = {
     'ghibli': (
-        'animated film scene in the style of Studio Ghibli "My Neighbor Totoro" (1988) by Hayao Miyazaki: '
-        'clean cel animation, warm golden sunlight, bright lush green nature, '
-        'soft expressive round characters with large eyes, smooth ink outlines, '
-        'bright warm joyful uplifting atmosphere, vibrant cheerful colours, no dark tones'
+        'animated film scene in the style of Studio Ghibli "My Neighbor Totoro" (1988) by Hayao Miyazaki. '
+        'TECHNIQUE: hand-painted cel animation, gouache on paper, visible soft brushwork texture. '
+        'LINES: clean medium-weight ink outlines, slightly organic and hand-drawn, never mechanical. '
+        'COLOURS: warm golden yellow, soft meadow green, sky blue, cream white, peach skin — '
+        'ALL colours minimum 70% brightness, fully saturated and warm, absolutely NO dark or muddy tones. '
+        'LIGHTING: warm golden sunlight from upper-right, soft atmospheric haze in distance, '
+        'bright and airy throughout the whole image. '
+        'CHARACTERS: large round head 1/4 of body, very large circular eyes with white highlight dot, '
+        'simple tiny nose, small rounded mouth, soft rounded limbs, no sharp angles anywhere. '
+        'BACKGROUND: lush detailed hand-painted nature — bright green grass, leafy trees, fluffy clouds, '
+        'wooden houses, flowers. '
+        'MOOD: peaceful wonder, summer warmth, every corner of the image bright and welcoming'
     ),
     'disney': (
-        'animated fairy-tale scene in the style of classic Disney "Sleeping Beauty" (1959): '
-        'fluid elegant ink-outlined characters, bright rich jewel-tone colours, '
-        'sparkling warm magical light, graceful rounded shapes, '
-        'bright cheerful uplifting atmosphere, vivid saturated colours throughout'
+        'animated fairy-tale scene in the style of classic Disney "Sleeping Beauty" (1959) by Eyvind Earle. '
+        'TECHNIQUE: hand-inked flat cel animation with opaque gouache fills, vintage 1950s production. '
+        'LINES: bold elegant ink outlines, slightly angular and decorative, uniform even weight. '
+        'COLOURS: rich jewel tones — royal cobalt blue, ruby crimson, emerald green, vivid violet, '
+        'pure gold — maximum saturation, brilliant and luminous, NO muted, dusty or dark tones. '
+        'LIGHTING: warm sparkling magical light, dramatic contrast with glowing bright highlights, '
+        'golden sparkle effects and warm magical glow throughout. '
+        'CHARACTERS: elegant proportions, long graceful limbs, large expressive eyes with thick lashes, '
+        'refined features, fluid movement. '
+        'BACKGROUND: ornate stylized architecture, decorative flat patterns, rich tapestry-like detail. '
+        'MOOD: fairy-tale grandeur, magical elegance, vivid and spectacular'
     ),
     'pixar': (
-        'premium cinematic 3D animated family fantasy feature film, '
-        'top-tier modern animation studio quality: '
-        'warm soft global illumination with volumetric depth, '
-        'rich warm colour grading with vivid saturation, '
-        'expressive stylised characters with polished high-detail faces, '
-        'large emotive eyes, emotionally readable expressions and body language, '
-        'soft subsurface skin glow, cinematic wide-angle composition, '
-        'lush detailed environment, bright cheerful uplifting premium children\'s fantasy'
+        'premium cinematic 3D CGI animated feature film, top-tier modern animation studio quality. '
+        'TECHNIQUE: photorealistic subsurface scattering on skin surfaces, ray-traced global illumination, '
+        'smooth polished 3D geometry with fine surface micro-detail. '
+        'LINES: NO ink outlines — purely smooth curved 3D forms and surfaces. '
+        'COLOURS: rich warm vibrant saturation — golden amber, vivid orange-red, sky blue, leaf green — '
+        'warm colour grading, bright luminous highlights, minimum 65% brightness throughout. '
+        'LIGHTING: soft volumetric global illumination, warm key light from upper-left, '
+        'gentle fill light, soft rim light — NO harsh black shadows. '
+        'CHARACTERS: large rounded head 1/3 of body height, oversized expressive eyes with deep shine, '
+        'smooth polished skin with warm subsurface glow, exaggerated friendly proportions. '
+        'BACKGROUND: richly detailed 3D environment — realistic wood, fabric, stone, vegetation textures. '
+        'MOOD: cinematic warmth, emotional depth, wonder and joyful adventure'
     ),
     'watercolor': (
         'bright cheerful children\'s book watercolour illustration '
-        'in the style of Quentin Blake\'s illustrations for Roald Dahl books: '
-        'energetic ink lines with bright colourful watercolour washes, '
-        'warm golden natural light, loose expressive brushwork, '
-        'vivid warm cheerful uplifting mood, white paper showing as highlights'
+        'in the style of Quentin Blake\'s illustrations for Roald Dahl books. '
+        'TECHNIQUE: traditional watercolour washes over loose pen-and-ink drawing on white paper. '
+        'LINES: energetic scratchy ink outlines — irregular, expressive, slightly wobbly — '
+        'hand-drawn and imperfect, NOT digital or clean. '
+        'COLOURS: bright translucent washes — warm lemon yellow, grass green, cornflower blue, '
+        'coral red, peach — white paper showing through as bright highlights everywhere, '
+        'light and airy, maximum 50% opacity washes. '
+        'LIGHTING: natural bright daylight, open and airy, soft warm grey shadows as watercolour wash. '
+        'CHARACTERS: loose energetic shapes, exaggerated movement, large round eyes, '
+        'simple curved lines, expressive wobbly outlines, spontaneous feel. '
+        'BACKGROUND: sketchy atmospheric watercolour washes, few lines suggesting environment, '
+        'lots of white space, not overly detailed. '
+        'MOOD: playful, energetic, spontaneous, joyful and light'
     ),
     'cartoon': (
         'bright bold children\'s cartoon illustration '
-        'in the style of classic Cartoon Network shows and "The Smurfs": '
-        'thick clean black outlines, flat bright saturated primary colours, '
-        'simple bold friendly shapes, expressive large eyes, '
-        'clean graphic look, bright sunny cheerful atmosphere, vivid uplifting colours'
+        'in the style of classic Cartoon Network shows and Hanna-Barbera cartoons. '
+        'TECHNIQUE: flat digital vector illustration, zero texture, zero grain, perfectly clean. '
+        'LINES: thick uniform bold black outlines, consistent 4-5px weight, perfectly smooth and clean. '
+        'COLOURS: flat saturated PRIMARY colours — pure red, royal blue, grass green, sunshine yellow, '
+        'orange — COMPLETELY FLAT fills with NO gradients, NO shadows, NO halftones, NO shading. '
+        'LIGHTING: NONE — completely flat uniform colour fills throughout the entire image. '
+        'CHARACTERS: simple bold geometric shapes — circle heads, oval bodies, '
+        'very large round eyes taking up 1/3 of face area, simple curved mouths, stubby rounded limbs. '
+        'BACKGROUND: simple flat solid colour background, minimal geometric shapes, '
+        'bright solid sky, simple flat ground, 2-3 simple background elements only. '
+        'MOOD: bold, graphic, maximally energetic and fun, visually simple'
     ),
     'storybook': (
         'classic illustrated children\'s storybook scene '
-        'in the style of E.H. Shepard\'s Winnie-the-Pooh illustrations: '
-        'warm pen-and-ink lines with golden watercolour washes, '
-        'bright cosy warm light, friendly rounded character shapes, '
-        'nostalgic cheerful uplifting atmosphere, warm amber and green tones'
+        'in the style of E.H. Shepard\'s Winnie-the-Pooh illustrations with pen-and-ink and watercolour. '
+        'TECHNIQUE: detailed fine pen-and-ink cross-hatching with warm watercolour washes on cream paper. '
+        'LINES: fine warm brown ink lines with hatching and cross-hatching for shading, '
+        'delicate, precise, traditional book illustration style. '
+        'COLOURS: warm amber, golden ochre, sage green, dusty rose, soft sky blue, cream white — '
+        'ALL warm-toned, aged-paper feel, soft and gentle, maximum 55% saturation. '
+        'LIGHTING: cosy warm golden afternoon light, soft diffused, no harsh shadows, '
+        'gentle and comforting throughout. '
+        'CHARACTERS: friendly rounded forms with traditional proportions, '
+        'expressive gentle faces, soft fabric textures on clothing, lovable and safe. '
+        'BACKGROUND: detailed pen-hatched environment — trees, fields, cosy interiors — '
+        'with warm watercolour wash colour fills. '
+        'MOOD: cosy, nostalgic, safe, warm, timeless and loved'
     ),
     'soviet': (
         'Soviet children\'s animated cartoon scene '
-        'in the exact style of Soyuzmultfilm "Cheburashka" (1966) and "Hedgehog in the Fog" (1975): '
-        'thick clean black ink outlines, flat bright colours — sunshine yellow, '
-        'bright red, sky blue, grass green, warm orange — no dark tones, '
-        'simple rounded friendly character shapes with large soulful eyes, '
-        'flat graphic clean look, bright warm sunny cheerful joyful atmosphere'
+        'in the exact style of Soyuzmultfilm "Cheburashka" (1966) by Leonid Shvartsman. '
+        'TECHNIQUE: flat hand-painted cel animation, 1960s USSR Soyuzmultfilm production quality. '
+        'LINES: thick clean black ink outlines, perfectly uniform weight, completely flat and graphic. '
+        'COLOURS: strict limited flat palette — sunshine yellow, brick red, sky blue, grass green, '
+        'warm orange, cream white — ONLY these colours, NO gradients whatsoever, '
+        'NO shadows, completely flat solid fills. '
+        'LIGHTING: completely flat and even throughout — NO shadows, NO highlights, NO shading, '
+        'NO lighting effects of any kind. '
+        'CHARACTERS: very round compact bodies, extremely large round eyes with simple black pupils, '
+        'small simple nose, wide simple mouth, large rounded ears, simple tubular limbs. '
+        'BACKGROUND: simple flat geometric shapes — flat coloured sky, simple flat ground, '
+        'basic stylized flat trees and buildings, 3-4 elements only. '
+        'MOOD: warm Soviet nostalgia, simple and friendly, bright cheerful and innocent'
     ),
 }
 
@@ -68,8 +120,8 @@ _BASE_QUALITY = (
     "children's book illustration, bright vibrant cheerful colours, warm sunlit happy atmosphere, "
     "wide establishing shot showing full scene, full body characters visible, "
     "high quality detailed professional illustration, safe for children, "
-    "correct anatomy, exactly five fingers, "
-    "only the named hero and the named animal companion in the scene — no extra people, no background crowd"
+    "CHILD as protagonist — NO adult men, NO adult women as the main foreground character, "
+    "correct child anatomy, no extra background crowd"
 )
 
 # Used for Stability AI and Pollinations (DALL-E 3 ignores negative_prompt parameter)
@@ -88,9 +140,11 @@ _NEGATIVE_PROMPT = (
 # Inline "avoid" — embedded in every DALL-E 3 prompt (DALL-E 3 ignores negative_prompt param)
 _DALLE_AVOID = (
     'Do NOT include: colour swatches, palette grids, comic panels, split-screen layout, '
-    'collage, storyboard grid, dark or gloomy scenes, extra unnamed background people, '
+    'collage, storyboard grid, dark or gloomy scenes, night scene, extra unnamed background people, '
     'extreme close-up face portraits, floating text labels, captions, UI windows, '
-    'duplicate panels, watermarks, random props not in the scene'
+    'duplicate panels, watermarks, random props not in the scene, '
+    'adult men or adult women as the main foreground character, bearded men, muscular adults, '
+    'aged or wrinkled faces in the foreground'
 )
 
 

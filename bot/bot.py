@@ -25,6 +25,7 @@ STEP_IMAGES_DIR = Path('/opt/malenkie-legendy/static/ui')
 STEP_IMAGES: dict[str, str] = {
     'welcome':       'welcome.png',
     'ask_name':      'ask_name.png',
+    'ask_age':       'ask_age.png',
     'ask_gender':    'ask_gender.png',
     'ask_purpose':   'ask_purpose.png',
     'ask_style':     'ask_style.png',
@@ -292,7 +293,8 @@ async def form_name(message: Message, state: FSMContext):
         await message.answer("Пожалуйста, напиши имя ребёнка (до 50 символов).")
         return
     await state.update_data(child_name=name)
-    await message.answer(
+    await _answer_step(
+        message, 'ask_age',
         f"Замечательно, {name}! 🌟\n\nСколько лет ребёнку?",
         reply_markup=kb_age(),
     )
@@ -310,7 +312,7 @@ async def cb_age(call: CallbackQuery, state: FSMContext):
     await call.message.edit_reply_markup(reply_markup=None)
     await _answer_step(
         call.message, 'ask_gender',
-        f"Отлично, {age} лет — запомнил! 👶\n\nМальчик или девочка?",
+        f"Отлично, {age_word(age)} — запомнил! 👶\n\nМальчик или девочка?",
         reply_markup=kb_gender(),
     )
     await state.set_state(Form.gender)

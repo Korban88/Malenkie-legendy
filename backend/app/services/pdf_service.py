@@ -424,17 +424,28 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         for ch_idx, (chapter_title, paras) in enumerate(chapters):
             new_story_page()
 
-            # Chapter header
+            # Chapter header — visually distinct: larger, bolder, framed with rules
             if chapter_title:
-                pdf.ln(8)
+                pdf.ln(10)
+                # Top decorative rule
+                ar2, ag2, ab2 = C['ACC']
+                pdf.set_draw_color(ar2, ag2, ab2)
+                pdf.set_line_width(0.6)
+                pdf.line(MARGIN_OUTER, pdf.get_y(), PAGE_W - MARGIN_OUTER, pdf.get_y())
+                pdf.ln(5)
                 if has_fairy:
-                    pdf.set_font('Fairy', style='', size=19)
+                    pdf.set_font('Fairy', style='', size=23)
                 else:
-                    pdf.set_font('DejaVu', style='B', size=19)
+                    pdf.set_font('DejaVu', style='B', size=23)
                 pdf.set_text_color(tr, tg, tb)
                 pdf.set_x(MARGIN_OUTER)
-                pdf.multi_cell(CONTENT_W, 12, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
-                pdf.ln(8)
+                pdf.multi_cell(CONTENT_W, 14, chapter_title, align='C', new_x='LMARGIN', new_y='NEXT')
+                pdf.ln(4)
+                # Bottom decorative rule
+                pdf.set_draw_color(ar2, ag2, ab2)
+                pdf.set_line_width(0.4)
+                pdf.line(MARGIN_OUTER + 20, pdf.get_y(), PAGE_W - MARGIN_OUTER - 20, pdf.get_y())
+                pdf.ln(10)
 
             # ── Chapter image: ONE unique image per chapter, shown ONCE ───────
             # chapter[0]→img[1], chapter[1]→img[2], ..., chapter[4]→img[5]
@@ -457,9 +468,10 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
 
                 if space_left() < text_h:
                     new_story_page()
-                    pdf.set_font('DejaVu', style='', size=12)
-                    pdf.set_text_color(br, bg, bb)
 
+                # Always re-set font right before actual render (guard against any state drift)
+                pdf.set_font('DejaVu', style='', size=12)
+                pdf.set_text_color(br, bg, bb)
                 pdf.set_x(MARGIN_OUTER)
                 pdf.multi_cell(CONTENT_W, 7.5, para, align='J', new_x='LMARGIN', new_y='NEXT')
                 pdf.ln(4)
