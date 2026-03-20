@@ -63,7 +63,8 @@ _IMG_STYLE_SUFFIX = {
 }
 
 _BASE_QUALITY = (
-    "children's book illustration, bright vibrant cheerful colours, warm sunlit happy atmosphere, "
+    "FINISHED SINGLE-SCENE children's book illustration — one complete cohesive scene, nothing else. "
+    "Bright vibrant cheerful colours, warm sunlit happy atmosphere, "
     "wide establishing shot showing full scene, full body characters visible, "
     "high quality detailed professional illustration, safe for children, "
     "CHILD as protagonist — NO adult men, NO adult women as the main foreground character, "
@@ -73,6 +74,9 @@ _BASE_QUALITY = (
 # Used for Stability AI and Pollinations (DALL-E 3 ignores negative_prompt parameter)
 _NEGATIVE_PROMPT = (
     'color swatch, color chart, color palette diagram, palette grid, color picker, '
+    'split image, multiple panels, collage layout, reference board, design sheet, '
+    'character sheet, style sheet, storyboard, concept art, concept sheet, '
+    'multiple scenes in one frame, split layout, comic panels, '
     'dark gloomy scene, dark atmosphere, horror, night scene, shadows, '
     'close-up portrait, headshot, face only, extreme close-up, '
     'dark skin on fair-skinned character, unexpected skin tone change, '
@@ -80,15 +84,20 @@ _NEGATIVE_PROMPT = (
     'beard, mustache, stubble, facial hair on child, '
     'extra limbs, deformed hands, extra fingers, six fingers, bad anatomy, disfigured, '
     'watermark, signature, text label, username, blurry, low quality, ugly, '
+    'unfinished render, test render, draft, sketch lines, rough drawing, '
     'UI elements, website screenshot, digital interface mockup, computer window'
 )
 
 # Inline "avoid" — embedded in every DALL-E 3 prompt (DALL-E 3 ignores negative_prompt param)
 _DALLE_AVOID = (
-    'Avoid: no palette strips, no color swatches, no concept art, no sketch, '
-    'no unfinished illustration, no collage, no comic panels, no extra characters, '
-    'no inconsistent faces, no distorted anatomy, no text in image, no style mixing, '
-    'no visual artifacts, no adult men or women as main foreground character'
+    'RENDER AS ONE FINISHED ILLUSTRATION ONLY. '
+    'Strictly forbidden: palette strips, color swatches, color chart, '
+    'split image, multiple panels, collage, reference board, design sheet, '
+    'character sheet, style sheet, storyboard, concept art, multiple scenes in one frame, '
+    'sketch, unfinished illustration, draft, rough lines, '
+    'comic panels, style mixing, visual artifacts, text in image, '
+    'extra characters, inconsistent faces, distorted anatomy, '
+    'adult men or women as main foreground character'
 )
 
 
@@ -100,29 +109,95 @@ def _save_image_bytes(data: bytes, out_dir: Path) -> str:
     return filename
 
 
-def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'watercolor') -> str:
-    """4-block: A(Style) + B(Character — front-loaded) + C(Scene) + D(Quality/Negative).
+def _extract_character_appearance(cover_image_b64: str) -> str:
+    """Use GPT-4o Vision to extract exact character appearance from the cover image.
 
-    Character block comes BEFORE the scene so DALL-E 3 anchors on character appearance
-    before reading the action, reducing face/outfit drift across illustrations.
+    Returns a precise art-direction note used as hard visual reference for all
+    subsequent illustrations — ensuring the child and animal look identical in every scene.
+    """
+    if not settings.openai_api_key:
+        return ''
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.chat.completions.create(
+            model='gpt-4o',
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': f'data:image/png;base64,{cover_image_b64}',
+                            'detail': 'high',
+                        },
+                    },
+                    {
+                        'type': 'text',
+                        'text': (
+                            'You are a senior art director preparing character consistency sheets. '
+                            'Study this illustration carefully and describe EXACTLY how the main child character '
+                            'and animal companion look. Cover: hair color and style, skin tone, eye color, '
+                            'exact clothing (every color, garment type, accessories, shoes), '
+                            'animal species, fur/feather color, size, any distinctive markings or features. '
+                            'Write as a strict reference note for an illustrator who must draw these SAME characters '
+                            'in different scenes — every detail must match perfectly. '
+                            'Be concrete and specific. Under 130 words. Child first, then animal.'
+                        ),
+                    },
+                ],
+            }],
+            max_tokens=220,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return ''
+
+
+def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'watercolor',
+                  visual_ref_desc: str = '', is_followup: bool = False) -> str:
+    """4-block: A(Scene) + B(Character) + C(Style modifier) + D(Quality/Negative).
+
+    Scene comes FIRST so DALL-E 3 treats the prompt as an illustration brief,
+    not a design-reference document — prevents palette-strip artifacts.
+
+    For images 1-5 (is_followup=True), visual_ref_desc (extracted from the cover via
+    GPT-4o Vision) is injected as a hard character reference, overriding the generic
+    text char_desc to enforce strict visual consistency across all illustrations.
     """
     style = _IMG_STYLE_SUFFIX.get(image_style, _IMG_STYLE_SUFFIX['watercolor'])
-    parts = [style]
+    parts = []
 
-    # B — Character block (front-loaded for consistency)
-    if char_desc:
-        parts.append(
-            f"FIXED CHARACTER APPEARANCE — same in every illustration of this book: {char_desc}"
-        )
-
-    # C — Scene
+    # A — Scene (front-loaded to anchor DALL-E on the illustration, not style specs)
     parts.append(scene_prompt)
 
+    # B — Character block
+    # For follow-up images, visual_ref_desc (from cover Vision scan) takes priority —
+    # it describes exactly how the characters ACTUALLY look in the generated cover,
+    # which is far more reliable than the pre-generation text description.
+    if is_followup and visual_ref_desc:
+        parts.append(
+            f"STRICT CHARACTER REFERENCE — the child and animal in this scene must look "
+            f"IDENTICAL to the cover illustration, same in every detail: {visual_ref_desc}. "
+            f"Do NOT change hair, clothing, colors, or animal appearance in any way."
+        )
+    elif char_desc:
+        parts.append(f"Characters: {char_desc}")
+
+    # C — Style modifier
+    parts.append(f"Art style: {style}")
+
     # D — Consistency + quality + anti-artifact
-    parts.append(
-        "Same art style, colour tones, and character proportions as all other "
-        "illustrations in this storybook — one coherent visual universe"
-    )
+    if is_followup:
+        parts.append(
+            "CRITICAL: same characters, same art style, same colour palette as the cover page — "
+            "one perfectly coherent visual universe, zero design drift between illustrations"
+        )
+    else:
+        parts.append(
+            "Same art style, colour tones, and character proportions as all other "
+            "illustrations in this storybook — one coherent visual universe"
+        )
     parts.append(_BASE_QUALITY)
     parts.append(_DALLE_AVOID)
 
@@ -139,23 +214,47 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
         photo_hash = hashlib.sha256(raw_photo).hexdigest()
         if settings.keep_uploaded_photo:
             _save_image_bytes(raw_photo, out_dir)
+
+    cover_ref_b64: str | None = None   # cover image bytes used as Stability style reference
+    visual_char_desc: str = ''          # character description extracted from cover via Vision
+
     for i in range(count):
-        if scene_prompts and i < len(scene_prompts):
-            scene = scene_prompts[i]
-        else:
-            scene = f"{age}-year-old child named {child_name} in {style} fairy tale scene {i + 1}"
-        # char_desc passed separately so scene action comes first in the prompt
-        prompt = _build_prompt(scene, char_desc, image_style)
+        scene = (scene_prompts[i] if scene_prompts and i < len(scene_prompts)
+                 else f"{age}-year-old child named {child_name} in {style} fairy tale scene {i + 1}")
+
+        # Cover (i=0): plain prompt; follow-ups: inject visual reference from cover scan
+        prompt = _build_prompt(scene, char_desc, image_style,
+                               visual_ref_desc=visual_char_desc if i > 0 else '',
+                               is_followup=(i > 0))
         try:
-            filename = _generate_single(prompt, photo_base64 if i > 0 else None)
+            # Cover (0): use user photo as reference if provided
+            # Images 1+: use cover image as hard style/character reference
+            ref = photo_base64 if i == 0 else (cover_ref_b64 or photo_base64)
+            filename = _generate_single(prompt, ref, cover_fidelity=(i > 0 and cover_ref_b64 is not None))
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
+
+            # After cover is generated: save bytes + extract exact character appearance via Vision
+            if i == 0 and cover_ref_b64 is None:
+                try:
+                    cover_path = out_dir / filename
+                    if cover_path.exists():
+                        cover_ref_b64 = base64.b64encode(cover_path.read_bytes()).decode()
+                        visual_char_desc = _extract_character_appearance(cover_ref_b64)
+                except Exception:
+                    pass
         except Exception:
             pass  # slot stays None; index positions are preserved
     return urls, photo_hash
 
 
-def _generate_single(prompt, photo_base64):
+def _generate_single(prompt, photo_base64, cover_fidelity: bool = False):
+    """Generate a single image.
+
+    cover_fidelity=True means photo_base64 is the cover image (not a user photo),
+    so we use a higher fidelity value to preserve character appearance more strictly.
+    """
     provider = settings.image_provider
+    fidelity = 0.72 if cover_fidelity else 0.6
     if provider == 'openai':
         try:
             return _openai_generate(prompt)
@@ -165,7 +264,7 @@ def _generate_single(prompt, photo_base64):
             raise
     if provider == 'stability':
         try:
-            return _stability_generate(prompt, photo_base64)
+            return _stability_generate(prompt, photo_base64, fidelity=fidelity)
         except Exception:
             if settings.backup_image_provider == 'pollinations':
                 return _pollinations_generate(prompt)
@@ -191,7 +290,7 @@ def _openai_generate(prompt):
     return _save_image_bytes(img_response.content, Path(settings.images_dir))
 
 
-def _stability_generate(prompt, photo_base64):
+def _stability_generate(prompt, photo_base64, fidelity: float = 0.6):
     if not settings.stability_api_key:
         raise RuntimeError('STABILITY_API_KEY is not configured')
     out_dir = Path(settings.images_dir)
@@ -205,7 +304,7 @@ def _stability_generate(prompt, photo_base64):
                 'negative_prompt': _NEGATIVE_PROMPT,
                 'output_format': 'png',
                 'aspect_ratio': '16:9',
-                'fidelity': 0.6,
+                'fidelity': fidelity,
             },
             files={'image': ('reference.png', photo_bytes, 'image/png')},
             timeout=120,
