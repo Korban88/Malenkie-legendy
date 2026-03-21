@@ -256,7 +256,7 @@ def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
     pdf.set_font('DejaVu', style='B', size=8)
     pdf.set_text_color(ar, ag, ab)
     pdf.set_x(MARGIN_OUTER)
-    pdf.cell(CONTENT_W, 5, '✦  Что будет в следующий раз...  ✦', align='C')
+    pdf.cell(CONTENT_W, 5, '✦  Хочешь ещё одну сказку?  ✦', align='C')
     pdf.ln(5)
 
     tr, tg, tb = C['TTL']
@@ -310,7 +310,8 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
 
         # Image slots: [0]=cover, [1-5]=one per chapter (5 chapters)
         cover_img    = _img(0)
-        chapter_imgs = [_img(i) for i in range(1, 6)]   # one image per chapter
+        # 3 scene images (indices 1-3) for first 3 chapters; chapters 4-5 are text-only
+        chapter_imgs = [_img(i) for i in range(1, 4)]
 
         rr, rg, rb = C['RHD']
         ar, ag, ab = C['ACC']
@@ -327,9 +328,9 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
 
         def _body_font() -> None:
             if has_fairy:
-                pdf.set_font('Fairy', style='', size=13)
+                pdf.set_font('Fairy', style='', size=15)
             else:
-                pdf.set_font('DejaVu', style='', size=13)
+                pdf.set_font('DejaVu', style='', size=15)
 
         # ── PAGE 1: Cover ─────────────────────────────────────────────────────
         pdf.add_page()
@@ -465,7 +466,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 _draw_wide_image(pdf, C, ch_img)
 
             # ── Body paragraphs ───────────────────────────────────────────────
-            line_h = 8  # line height for body font size 13
+            line_h = 9  # line height for body font size 15
             for para in paras:
                 _body_font()
                 pdf.set_text_color(br, bg, bb)

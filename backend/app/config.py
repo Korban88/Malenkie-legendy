@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     text_provider: str = 'openrouter'
     openrouter_api_key: str = ''
+    # SAFETY: this field is validated against allowlist at application startup.
+    # Never change this to an expensive model (claude-opus, gpt-4o, o1, etc.).
     openrouter_model: str = 'openai/gpt-4o-mini'
     backup_text_provider: str = 'template'
 
@@ -35,6 +37,10 @@ class Settings(BaseSettings):
     images_dir: str = str(BASE_DIR / 'backend' / 'storage' / 'images')
 
     keep_uploaded_photo: bool = False
+
+    # TESTING: set to True to always generate episode 1 (disables series continuation).
+    # Switch to False when ready for production.
+    force_episode_one: bool = True
 
     @property
     def database_url(self) -> str:

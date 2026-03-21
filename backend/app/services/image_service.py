@@ -190,8 +190,14 @@ def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'wa
     # D — Consistency + quality + anti-artifact
     if is_followup:
         parts.append(
-            "CRITICAL: same characters, same art style, same colour palette as the cover page — "
-            "one perfectly coherent visual universe, zero design drift between illustrations"
+            "CRITICAL VISUAL CONSISTENCY — this illustration is part of a single storybook and MUST look "
+            "as if drawn by THE SAME HAND in THE SAME SITTING as the cover illustration. "
+            "IDENTICAL rendering technique: same line weight, same edge softness, same brushstroke texture, same level of detail. "
+            "IDENTICAL colour palette: same specific hues, same saturation level, same warmth/coolness balance as the cover. "
+            "IDENTICAL lighting: same direction, same intensity, same ambient mood as the cover. "
+            "IDENTICAL character proportions and design — same child, same animal, absolutely zero design drift. "
+            "A viewer placing this image next to the cover must NOT be able to tell they came from different prompts. "
+            "Any style drift, technique mismatch, or character inconsistency = mission failure."
         )
     else:
         parts.append(

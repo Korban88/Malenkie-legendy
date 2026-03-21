@@ -1,6 +1,7 @@
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..models import Child, Story, User
 from .image_service import generate_images
 from .pdf_service import generate_pdf
@@ -77,7 +78,10 @@ def generate_story(db: Session, payload: dict) -> Story:
     child = get_or_create_child(db, payload, user.id)
 
     max_episode = db.scalar(select(func.max(Story.episode_number)).where(Story.child_id == child.id)) or 0
-    episode_number = payload.get('episode_number') or (max_episode + 1)
+    if get_settings().force_episode_one:
+        episode_number = 1
+    else:
+        episode_number = payload.get('episode_number') or (max_episode + 1)
 
     existing = db.scalar(select(Story).where(Story.child_id == child.id, Story.episode_number == episode_number))
     if existing:
@@ -136,7 +140,7 @@ def generate_story(db: Session, payload: dict) -> Story:
                 photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
                 char_desc=text_payload.get('char_desc', ''),
                 scene_prompts=text_payload.get('image_prompts', []),
-                count=6,
+                count=4,
                 image_style=image_style,
             )
             if photo_hash:
