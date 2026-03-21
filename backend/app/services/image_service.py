@@ -154,50 +154,121 @@ def _extract_character_appearance(cover_image_b64: str) -> str:
         return ''
 
 
+def _extract_style_fingerprint(cover_image_b64: str) -> str:
+    """Use GPT-4o Vision to extract a precise visual STYLE fingerprint from the cover.
+
+    This is separate from character appearance — it captures HOW the illustration
+    is rendered: technique, palette, line work, lighting, texture, proportions.
+
+    The fingerprint is injected as a "STYLE CONSTITUTION" at the very start of every
+    follow-up prompt, giving DALL-E 3 the most precise possible style specification
+    reverse-engineered from the actual cover pixels — not from generic labels.
+    """
+    if not settings.openai_api_key:
+        return ''
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.chat.completions.create(
+            model='gpt-4o',
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': f'data:image/png;base64,{cover_image_b64}',
+                            'detail': 'high',
+                        },
+                    },
+                    {
+                        'type': 'text',
+                        'text': (
+                            'You are a technical art director. Analyze this illustration and produce a precise '
+                            'STYLE FINGERPRINT — a technical specification another AI must follow exactly to '
+                            'draw in the SAME visual language. Be extremely specific:\n'
+                            '1. RENDERING TECHNIQUE: exact medium and method '
+                            '(e.g. "soft digital watercolor, semi-transparent pigment washes over clean pencil sketch base")\n'
+                            '2. LINE WORK: weight, color, sharpness, consistency '
+                            '(e.g. "thin clean dark-brown outlines approx 1-2px, slightly hand-drawn unevenness, expressive not mechanical")\n'
+                            '3. COLOUR PALETTE: exactly 4-5 dominant colors with descriptive names '
+                            '(e.g. "warm golden amber, deep forest teal, cream parchment white, muted dusty rose, rich chocolate brown")\n'
+                            '4. LIGHTING: direction, quality, color temperature, shadow style '
+                            '(e.g. "soft overhead warm golden light from upper-left, long gentle shadows, no harsh contrast, dreamy ambient glow")\n'
+                            '5. TEXTURE: surface character '
+                            '(e.g. "slight paper grain visible throughout, loose expressive brushstroke texture on large areas, not photorealistic")\n'
+                            '6. CHARACTER PROPORTIONS: anatomy style '
+                            '(e.g. "slightly stylized chibi-adjacent, large expressive eyes taking 1/4 of face, simplified rounded hands, approx 5-head-tall")\n'
+                            '7. BACKGROUND TREATMENT: detail level and style '
+                            '(e.g. "painterly atmospheric backgrounds, impressionistic soft-focus details, warm environmental haze")\n'
+                            'Under 200 words total. Be technical and specific — not poetic.'
+                        ),
+                    },
+                ],
+            }],
+            max_tokens=320,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return ''
+
+
 def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'watercolor',
-                  visual_ref_desc: str = '', is_followup: bool = False) -> str:
-    """4-block: A(Scene) + B(Character) + C(Style modifier) + D(Quality/Negative).
+                  visual_ref_desc: str = '', visual_style_fingerprint: str = '',
+                  is_followup: bool = False) -> str:
+    """Build image generation prompt with style constitution for visual consistency.
 
-    Scene comes FIRST so DALL-E 3 treats the prompt as an illustration brief,
-    not a design-reference document — prevents palette-strip artifacts.
+    Prompt block order for FOLLOW-UP images (is_followup=True):
+      [0] STYLE CONSTITUTION — extracted from actual cover pixels via GPT-4o Vision.
+          Front-loaded so DALL-E 3 treats it as the primary rendering constraint.
+      [A] Scene description — what to draw
+      [B] Character reference — exact appearance extracted from cover
+      [C] Style modifier — generic style label (reinforcement)
+      [D] Unity + quality + anti-artifact
 
-    For images 1-5 (is_followup=True), visual_ref_desc (extracted from the cover via
-    GPT-4o Vision) is injected as a hard character reference, overriding the generic
-    text char_desc to enforce strict visual consistency across all illustrations.
+    For COVER (is_followup=False):
+      [A] Scene → [B] Characters → [C] Style → [D] Quality
     """
     style = _IMG_STYLE_SUFFIX.get(image_style, _IMG_STYLE_SUFFIX['watercolor'])
     parts = []
 
-    # A — Scene (front-loaded to anchor DALL-E on the illustration, not style specs)
+    # ── Block 0: STYLE CONSTITUTION (follow-up only, always FIRST) ──────────
+    # Reverse-engineered from the actual cover pixels — far more reliable than
+    # generic style labels. Placed first so DALL-E weights it highest.
+    if is_followup and visual_style_fingerprint:
+        parts.append(
+            f"STYLE CONSTITUTION — MANDATORY visual specification, non-negotiable: "
+            f"{visual_style_fingerprint} "
+            f"Every aspect of rendering in this image MUST match this specification exactly. "
+            f"This is illustration N in a single storybook series — identical visual language required."
+        )
+
+    # ── Block A: Scene ───────────────────────────────────────────────────────
     parts.append(scene_prompt)
 
-    # B — Character block
-    # For follow-up images, visual_ref_desc (from cover Vision scan) takes priority —
-    # it describes exactly how the characters ACTUALLY look in the generated cover,
-    # which is far more reliable than the pre-generation text description.
+    # ── Block B: Character reference ────────────────────────────────────────
     if is_followup and visual_ref_desc:
         parts.append(
-            f"STRICT CHARACTER REFERENCE — the child and animal in this scene must look "
-            f"IDENTICAL to the cover illustration, same in every detail: {visual_ref_desc}. "
-            f"Do NOT change hair, clothing, colors, or animal appearance in any way."
+            f"CHARACTER REFERENCE — copied exactly from the cover illustration: {visual_ref_desc}. "
+            f"Do NOT change any detail. Same hair, same clothing, same colors, same animal appearance in every scene."
         )
     elif char_desc:
         parts.append(f"Characters: {char_desc}")
 
-    # C — Style modifier
-    parts.append(f"Art style: {style}")
-
-    # D — Consistency + quality + anti-artifact
+    # ── Block C: Style modifier (reinforcement) ──────────────────────────────
     if is_followup:
         parts.append(
-            "CRITICAL VISUAL CONSISTENCY — this illustration is part of a single storybook and MUST look "
-            "as if drawn by THE SAME HAND in THE SAME SITTING as the cover illustration. "
-            "IDENTICAL rendering technique: same line weight, same edge softness, same brushstroke texture, same level of detail. "
-            "IDENTICAL colour palette: same specific hues, same saturation level, same warmth/coolness balance as the cover. "
-            "IDENTICAL lighting: same direction, same intensity, same ambient mood as the cover. "
-            "IDENTICAL character proportions and design — same child, same animal, absolutely zero design drift. "
-            "A viewer placing this image next to the cover must NOT be able to tell they came from different prompts. "
-            "Any style drift, technique mismatch, or character inconsistency = mission failure."
+            f"Art style reinforcement (same as cover): {style}"
+        )
+    else:
+        parts.append(f"Art style: {style}")
+
+    # ── Block D: Unity + quality + anti-artifact ─────────────────────────────
+    if is_followup:
+        parts.append(
+            "SINGLE UNIFIED STORYBOOK: this image must be visually indistinguishable "
+            "from the same artist who drew the cover — same hand, same session, same tools. "
+            "A viewer placing this next to the cover must see one coherent visual universe."
         )
     else:
         parts.append(
@@ -207,11 +278,11 @@ def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'wa
     parts.append(_BASE_QUALITY)
     parts.append(_DALLE_AVOID)
 
-    return ". ".join(parts)[:3500]
+    return ". ".join(parts)[:3900]
 
 
 def generate_images(child_name, age, style, photo_base64, char_desc='',
-                    scene_prompts=None, count=5, image_style='watercolor'):
+                    scene_prompts=None, count=4, image_style='watercolor'):
     urls: list[str | None] = [None] * count   # fixed-size: indices preserved even on failure
     photo_hash = None
     out_dir = Path(settings.images_dir)
@@ -221,31 +292,37 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
         if settings.keep_uploaded_photo:
             _save_image_bytes(raw_photo, out_dir)
 
-    cover_ref_b64: str | None = None   # cover image bytes used as Stability style reference
-    visual_char_desc: str = ''          # character description extracted from cover via Vision
+    cover_ref_b64: str | None = None      # cover image bytes — pixel reference for Stability
+    visual_char_desc: str = ''            # character appearance from cover Vision scan
+    visual_style_fingerprint: str = ''    # style fingerprint from cover Vision scan
 
     for i in range(count):
         scene = (scene_prompts[i] if scene_prompts and i < len(scene_prompts)
                  else f"{age}-year-old child named {child_name} in {style} fairy tale scene {i + 1}")
 
-        # Cover (i=0): plain prompt; follow-ups: inject visual reference from cover scan
-        prompt = _build_prompt(scene, char_desc, image_style,
-                               visual_ref_desc=visual_char_desc if i > 0 else '',
-                               is_followup=(i > 0))
+        # Cover (i=0): plain prompt, no style constitution yet
+        # Follow-ups (i>0): inject both style fingerprint (constitution) and character reference
+        prompt = _build_prompt(
+            scene, char_desc, image_style,
+            visual_ref_desc=visual_char_desc if i > 0 else '',
+            visual_style_fingerprint=visual_style_fingerprint if i > 0 else '',
+            is_followup=(i > 0),
+        )
         try:
             # Cover (0): use user photo as reference if provided
-            # Images 1+: use cover image as hard style/character reference
+            # Follow-ups (1+): use cover as pixel reference for Stability style transfer
             ref = photo_base64 if i == 0 else (cover_ref_b64 or photo_base64)
             filename = _generate_single(prompt, ref, cover_fidelity=(i > 0 and cover_ref_b64 is not None))
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
 
-            # After cover is generated: save bytes + extract exact character appearance via Vision
+            # After cover: extract both character appearance AND style fingerprint via Vision
             if i == 0 and cover_ref_b64 is None:
                 try:
                     cover_path = out_dir / filename
                     if cover_path.exists():
                         cover_ref_b64 = base64.b64encode(cover_path.read_bytes()).decode()
                         visual_char_desc = _extract_character_appearance(cover_ref_b64)
+                        visual_style_fingerprint = _extract_style_fingerprint(cover_ref_b64)
                 except Exception:
                     pass
         except Exception:
@@ -253,14 +330,36 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
     return urls, photo_hash
 
 
-def _generate_single(prompt, photo_base64, cover_fidelity: bool = False):
+def _generate_single(prompt: str, photo_base64: str | None, cover_fidelity: bool = False) -> str:
     """Generate a single image.
 
-    cover_fidelity=True means photo_base64 is the cover image (not a user photo),
-    so we use a higher fidelity value to preserve character appearance more strictly.
+    Hybrid strategy for visual consistency:
+
+    When cover_fidelity=True (generating follow-up images with cover as reference):
+      → PREFER Stability AI /control/style endpoint if stability_api_key is configured.
+        This is true image-to-image style transfer — the cover image is used as a pixel-level
+        style reference, guaranteeing the same rendering regardless of the text prompt.
+        Works even when the main image_provider is 'openai'.
+      → If Stability is not available, fall back to main provider with style constitution
+        text already baked into the prompt.
+
+    When cover_fidelity=False (generating the cover itself):
+      → Use the configured image_provider normally.
     """
     provider = settings.image_provider
-    fidelity = 0.72 if cover_fidelity else 0.6
+    # Higher fidelity for cover follow-ups: tighter style adherence
+    fidelity = 0.82 if cover_fidelity else 0.60
+
+    # ── Hybrid: always use Stability style-transfer for follow-ups if available ──
+    # This works even when the cover was generated by DALL-E: Stability extracts the
+    # visual style from the cover pixels and applies it to the new scene.
+    if cover_fidelity and photo_base64 and settings.stability_api_key:
+        try:
+            return _stability_generate(prompt, photo_base64, fidelity=fidelity)
+        except Exception:
+            pass  # fall through to configured provider below
+
+    # ── Primary provider ─────────────────────────────────────────────────────
     if provider == 'openai':
         try:
             return _openai_generate(prompt)
@@ -280,12 +379,11 @@ def _generate_single(prompt, photo_base64, cover_fidelity: bool = False):
     raise ValueError(f'Unsupported image provider: {provider}')
 
 
-def _openai_generate(prompt):
+def _openai_generate(prompt: str) -> str:
     if not settings.openai_api_key:
         raise RuntimeError('OPENAI_API_KEY is not configured')
     from openai import OpenAI
     client = OpenAI(api_key=settings.openai_api_key)
-    # Use landscape format for wide page layout
     response = client.images.generate(
         model='dall-e-3', prompt=prompt[:4000], size='1024x1024',
         quality='standard', style='natural', n=1
@@ -296,7 +394,7 @@ def _openai_generate(prompt):
     return _save_image_bytes(img_response.content, Path(settings.images_dir))
 
 
-def _stability_generate(prompt, photo_base64, fidelity: float = 0.6):
+def _stability_generate(prompt: str, photo_base64: str | None, fidelity: float = 0.6) -> str:
     if not settings.stability_api_key:
         raise RuntimeError('STABILITY_API_KEY is not configured')
     out_dir = Path(settings.images_dir)
@@ -309,7 +407,7 @@ def _stability_generate(prompt, photo_base64, fidelity: float = 0.6):
                 'prompt': prompt,
                 'negative_prompt': _NEGATIVE_PROMPT,
                 'output_format': 'png',
-                'aspect_ratio': '16:9',
+                'aspect_ratio': '1:1',
                 'fidelity': fidelity,
             },
             files={'image': ('reference.png', photo_bytes, 'image/png')},
@@ -324,7 +422,7 @@ def _stability_generate(prompt, photo_base64, fidelity: float = 0.6):
             'prompt': prompt,
             'negative_prompt': _NEGATIVE_PROMPT,
             'output_format': 'png',
-            'aspect_ratio': '16:9',
+            'aspect_ratio': '1:1',
         },
         timeout=120,
     )
@@ -332,11 +430,11 @@ def _stability_generate(prompt, photo_base64, fidelity: float = 0.6):
     return _save_image_bytes(response.content, out_dir)
 
 
-def _pollinations_generate(prompt):
-    # Use landscape 16:9 format and add negative prompt support
+def _pollinations_generate(prompt: str) -> str:
     encoded = quote(prompt)
     encoded_neg = quote(_NEGATIVE_PROMPT)
-    url = f'https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&negative={encoded_neg}&model=flux'
+    url = (f'https://image.pollinations.ai/prompt/{encoded}'
+           f'?width=1024&height=1024&nologo=true&negative={encoded_neg}&model=flux')
     response = httpx.get(url, timeout=120)
     response.raise_for_status()
     return _save_image_bytes(response.content, Path(settings.images_dir))
