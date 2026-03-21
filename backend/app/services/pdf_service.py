@@ -301,17 +301,18 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         local_images: list[Path | None] = [_url_to_local_path(u) for u in image_urls]
 
         # ── Image slot assignments ───────────────────────────────────────────
-        # [0] = cover character portrait
-        # [1-5] = one image per chapter (chapters 0-4)
-        # [6] = animal companion (shown once at end)
-        # [7] = final/triumph scene
+        # [0] = cover illustration (shown on cover page)
+        # [1] = scene for chapter 1 (opening event)
+        # [2] = scene for chapter 3 (with secondary characters)
+        # [3] = scene for chapter 5 (climax / finale)
+        # Chapters 2 and 4 are text-only — even distribution across the book.
         def _img(idx: int) -> Path | None:
             return local_images[idx] if idx < len(local_images) else None
 
-        # Image slots: [0]=cover, [1-5]=one per chapter (5 chapters)
-        cover_img    = _img(0)
-        # 3 scene images (indices 1-3) for first 3 chapters; chapters 4-5 are text-only
-        chapter_imgs = [_img(i) for i in range(1, 4)]
+        cover_img = _img(0)
+        # Map story chapter index (0-based) → illustration index in local_images
+        # Chapters 0, 2, 4 get images [1], [2], [3] respectively — evenly spread.
+        _CHAPTER_IMG_MAP = {0: 1, 2: 2, 4: 3}
 
         rr, rg, rb = C['RHD']
         ar, ag, ab = C['ACC']
@@ -456,8 +457,8 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 pdf.ln(5)
 
             # ── Chapter illustration: placed right after header, before text ──
-            # This guarantees the image always appears — no complex page-break logic needed.
-            ch_img = chapter_imgs[ch_idx] if ch_idx < len(chapter_imgs) else None
+            # Images appear in chapters 1, 3, 5 (0-based: 0, 2, 4) for even book-layout spread.
+            ch_img = _img(_CHAPTER_IMG_MAP[ch_idx]) if ch_idx in _CHAPTER_IMG_MAP else None
             if ch_img:
                 img_h = _get_img_display_h(ch_img, IMG_W)
                 needed = img_h + 16  # image + frame padding + gap
