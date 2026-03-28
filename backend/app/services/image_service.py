@@ -295,16 +295,17 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
         if settings.keep_uploaded_photo:
             _save_image_bytes(raw_photo, out_dir)
 
-    cover_ref_b64: str | None = None      # cover image bytes — pixel reference for Stability
-    visual_char_desc: str = ''            # character appearance from cover Vision scan
-    visual_style_fingerprint: str = ''    # style fingerprint from cover Vision scan
+    # Together AI provider: use public cover URL as reference image for follow-ups.
+    # All other providers: use base64 pixel reference + GPT-4o Vision extraction.
+    cover_public_url: str | None = None    # public URL of cover — for Together reference images
+    cover_ref_b64: str | None = None       # cover bytes (base64) — for Stability/OpenAI img2img
+    visual_char_desc: str = ''
+    visual_style_fingerprint: str = ''
 
     for i in range(count):
         scene = (scene_prompts[i] if scene_prompts and i < len(scene_prompts)
                  else f"{age}-year-old child named {child_name} in {style} fairy tale scene {i + 1}")
 
-        # Cover (i=0): plain prompt, no style constitution yet
-        # Follow-ups (i>0): inject both style fingerprint (constitution) and character reference
         prompt = _build_prompt(
             scene, char_desc, image_style,
             visual_ref_desc=visual_char_desc if i > 0 else '',
@@ -312,28 +313,79 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
             is_followup=(i > 0),
         )
         try:
-            # Cover (0): use user photo as reference if provided
-            # Follow-ups (1+): use cover as pixel reference for Stability style transfer
             ref = photo_base64 if i == 0 else (cover_ref_b64 or photo_base64)
-            filename = _generate_single(prompt, ref, cover_fidelity=(i > 0 and cover_ref_b64 is not None))
+            filename = _generate_single(
+                prompt, ref,
+                cover_fidelity=(i > 0 and cover_ref_b64 is not None),
+                cover_url=cover_public_url if i > 0 else None,
+            )
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
 
-            # After cover: extract both character appearance AND style fingerprint via Vision
-            if i == 0 and cover_ref_b64 is None:
-                try:
-                    cover_path = out_dir / filename
-                    if cover_path.exists():
-                        cover_ref_b64 = base64.b64encode(cover_path.read_bytes()).decode()
-                        visual_char_desc = _extract_character_appearance(cover_ref_b64)
-                        visual_style_fingerprint = _extract_style_fingerprint(cover_ref_b64)
-                except Exception:
-                    pass
+            if i == 0:
+                cover_public_url = urls[0]
+                # For non-Together providers: extract style+character via GPT-4o Vision
+                if settings.image_provider != 'together':
+                    try:
+                        cover_path = out_dir / filename
+                        if cover_path.exists():
+                            cover_ref_b64 = base64.b64encode(cover_path.read_bytes()).decode()
+                            visual_char_desc = _extract_character_appearance(cover_ref_b64)
+                            visual_style_fingerprint = _extract_style_fingerprint(cover_ref_b64)
+                    except Exception:
+                        pass
         except Exception as exc:
             logger.warning('Image generation failed for slot %d: %s', i, exc)
     return urls, photo_hash
 
 
-def _generate_single(prompt: str, photo_base64: str | None, cover_fidelity: bool = False) -> str:
+def _together_generate(prompt: str, reference_url: str | None = None) -> str:
+    """Generate image via Together AI FLUX.2-pro.
+
+    Cover (reference_url=None): FLUX.1.1-pro, no reference — best quality for first image.
+    Follow-ups (reference_url set): FLUX.2-pro with image_urls=[cover_url] — model literally
+    looks at the cover when drawing the next scene, guaranteeing identical character and style.
+    No GPT-4o Vision extraction needed: pixel-level reference replaces text description.
+    """
+    if not settings.together_api_key:
+        raise RuntimeError('TOGETHER_API_KEY is not configured')
+
+    if reference_url:
+        model = 'black-forest-labs/FLUX.2-pro'
+        payload: dict = {
+            'model': model,
+            'prompt': prompt[:3000],
+            'width': 1024,
+            'height': 1024,
+            'n': 1,
+            'image_urls': [reference_url],
+        }
+    else:
+        model = 'black-forest-labs/FLUX.1.1-pro'
+        payload = {
+            'model': model,
+            'prompt': prompt[:3000],
+            'width': 1024,
+            'height': 1024,
+            'n': 1,
+        }
+
+    logger.debug('Together AI: model=%s reference=%s', model, bool(reference_url))
+    response = httpx.post(
+        'https://api.together.xyz/v1/images/generations',
+        headers={'Authorization': f'Bearer {settings.together_api_key}'},
+        json=payload,
+        timeout=120,
+    )
+    response.raise_for_status()
+    img_url = response.json()['data'][0]['url']
+
+    img_response = httpx.get(img_url, timeout=60)
+    img_response.raise_for_status()
+    return _save_image_bytes(img_response.content, Path(settings.images_dir))
+
+
+def _generate_single(prompt: str, photo_base64: str | None, cover_fidelity: bool = False,
+                     cover_url: str | None = None) -> str:
     """Generate a single image.
 
     Hybrid strategy for visual consistency:
@@ -350,6 +402,21 @@ def _generate_single(prompt: str, photo_base64: str | None, cover_fidelity: bool
       → Use the configured image_provider normally.
     """
     provider = settings.image_provider
+
+    # ── Together AI: URL-based reference images — strictest character consistency ──
+    # Cover URL is passed from generate_images after first image is saved.
+    # FLUX.2-pro receives the actual cover pixels and reuses character + style.
+    if provider == 'together':
+        try:
+            return _together_generate(prompt, reference_url=cover_url)
+        except Exception as exc:
+            logger.warning('Together image generation failed: %s', exc)
+            if settings.backup_image_provider == 'openai':
+                return _openai_generate(prompt)
+            if settings.backup_image_provider == 'pollinations':
+                return _pollinations_generate(prompt)
+            raise
+
     # Higher fidelity for cover follow-ups: tighter style adherence
     fidelity = 0.82 if cover_fidelity else 0.60
 

@@ -28,10 +28,11 @@ class Settings(BaseSettings):
     backup_text_provider: str = 'template'
 
     openai_api_key: str = ''
+    together_api_key: str = ''
 
-    image_provider: str = 'openai'
+    image_provider: str = 'together'
     stability_api_key: str = ''
-    backup_image_provider: str = 'pollinations'
+    backup_image_provider: str = 'openai'
 
     stories_dir: str = str(BASE_DIR / 'backend' / 'storage' / 'stories')
     images_dir: str = str(BASE_DIR / 'backend' / 'storage' / 'images')
