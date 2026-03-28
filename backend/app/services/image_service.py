@@ -374,16 +374,22 @@ def _generate_single(prompt: str, photo_base64: str | None, cover_fidelity: bool
     if provider == 'openai':
         try:
             return _openai_generate(prompt)
-        except Exception:
+        except Exception as exc:
+            logger.warning('OpenAI image generation failed: %s', exc)
             if settings.backup_image_provider == 'pollinations':
                 return _pollinations_generate(prompt)
+            if settings.backup_image_provider == 'stability':
+                return _stability_generate(prompt, photo_base64, fidelity=fidelity)
             raise
     if provider == 'stability':
         try:
             return _stability_generate(prompt, photo_base64, fidelity=fidelity)
-        except Exception:
+        except Exception as exc:
+            logger.warning('Stability image generation failed: %s', exc)
             if settings.backup_image_provider == 'pollinations':
                 return _pollinations_generate(prompt)
+            if settings.backup_image_provider == 'openai':
+                return _openai_generate(prompt)
             raise
     if provider == 'pollinations':
         return _pollinations_generate(prompt)
