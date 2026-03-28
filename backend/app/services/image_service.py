@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -9,6 +10,7 @@ import httpx
 from ..config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 _IMG_STYLE_SUFFIX = {
     'watercolor': (
@@ -326,8 +328,8 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                         visual_style_fingerprint = _extract_style_fingerprint(cover_ref_b64)
                 except Exception:
                     pass
-        except Exception:
-            pass  # slot stays None; index positions are preserved
+        except Exception as exc:
+            logger.warning('Image generation failed for slot %d: %s', i, exc)
     return urls, photo_hash
 
 
@@ -471,10 +473,14 @@ def _stability_generate(prompt: str, photo_base64: str | None, fidelity: float =
 
 
 def _pollinations_generate(prompt: str) -> str:
-    encoded = quote(prompt)
-    encoded_neg = quote(_NEGATIVE_PROMPT)
-    url = (f'https://image.pollinations.ai/prompt/{encoded}'
-           f'?width=1024&height=1024&nologo=true&negative={encoded_neg}&model=flux')
+    # Pollinations uses GET requests — keep URL short to avoid HTTP 414 / server rejections.
+    # The full prompt can be 3900+ chars; URL-encoding it plus negative_prompt creates
+    # a 10,000+ char URL that most servers/proxies reject. Use first 400 chars of prompt
+    # (core scene description) and omit the negative prompt from the URL.
+    short_prompt = prompt[:400]
+    encoded = quote(short_prompt)
+    url = f'https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&model=flux'
+    logger.debug('Pollinations URL length: %d', len(url))
     response = httpx.get(url, timeout=120)
     response.raise_for_status()
     return _save_image_bytes(response.content, Path(settings.images_dir))

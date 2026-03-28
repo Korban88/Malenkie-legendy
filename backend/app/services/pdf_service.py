@@ -256,7 +256,7 @@ def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
     pdf.set_font('DejaVu', style='B', size=8)
     pdf.set_text_color(ar, ag, ab)
     pdf.set_x(MARGIN_OUTER)
-    pdf.cell(CONTENT_W, 5, '✦  Хочешь ещё одну сказку?  ✦', align='C')
+    pdf.cell(CONTENT_W, 5, '◆  Хочешь ещё одну сказку?  ◆', align='C')
     pdf.ln(5)
 
     tr, tg, tb = C['TTL']
@@ -358,7 +358,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             pdf.set_font('DejaVu', style='', size=9)
             pdf.set_text_color(ar, ag, ab)
             pdf.set_x(MARGIN_OUTER)
-            pdf.multi_cell(CONTENT_W, 6, f'✦  Эпизод {episode_number}  ✦', align='C',
+            pdf.multi_cell(CONTENT_W, 6, f'◆  Эпизод {episode_number}  ◆', align='C',
                            new_x='LMARGIN', new_y='NEXT')
             pdf.ln(4)
 
@@ -395,7 +395,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         pdf.set_font('DejaVu', style='', size=8)
         pdf.set_text_color(ar, ag, ab)
         pdf.set_x(MARGIN_OUTER)
-        pdf.multi_cell(CONTENT_W, 5, '✦  Маленькие легенды  ✦', align='C', new_x='LMARGIN', new_y='NEXT')
+        pdf.multi_cell(CONTENT_W, 5, '◆  Маленькие легенды  ◆', align='C', new_x='LMARGIN', new_y='NEXT')
 
         # ── Parse story into chapters ─────────────────────────────────────────
         _para_sep = '\n\n' if '\n\n' in story_text else '\n'
@@ -497,7 +497,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         _title_font(22)
         pdf.set_text_color(tr, tg, tb)
         pdf.set_x(MARGIN_OUTER)
-        end_label = '~ Конец ~' if has_fairy else '✦  Конец  ✦'
+        end_label = '~ Конец ~' if has_fairy else '◆  Конец  ◆'
         pdf.multi_cell(CONTENT_W, 14, end_label, align='C', new_x='LMARGIN', new_y='NEXT')
         pdf.ln(6)
         farewell = f'{child_name}, до встречи в будущих приключениях!' if child_name else 'До встречи в будущих приключениях!'
