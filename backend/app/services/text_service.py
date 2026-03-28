@@ -270,6 +270,21 @@ _REFLEXIVE_LOSIA = re.compile(r'(\w+)лося\b', re.IGNORECASE)
 # Special character cleanup
 _SPECIAL_CHAR = re.compile(r'✦')
 
+# "Глава первый/второй/..." → correct feminine agreement ("глава" is feminine)
+_CHAPTER_ORDINALS = [
+    (re.compile(r'\bГлава первый\b'),     'Глава первая'),
+    (re.compile(r'\bГлава второй\b'),     'Глава вторая'),
+    (re.compile(r'\bГлава третий\b'),     'Глава третья'),
+    (re.compile(r'\bГлава четвёртый\b'),  'Глава четвёртая'),
+    (re.compile(r'\bГлава четвертый\b'),  'Глава четвёртая'),
+    (re.compile(r'\bГлава пятый\b'),      'Глава пятая'),
+    (re.compile(r'\bГлава шестой\b'),     'Глава шестая'),
+    (re.compile(r'\bГлава седьмой\b'),    'Глава седьмая'),
+    (re.compile(r'\bГлава восьмой\b'),    'Глава восьмая'),
+    (re.compile(r'\bГлава девятый\b'),    'Глава девятая'),
+    (re.compile(r'\bГлава десятый\b'),    'Глава десятая'),
+]
+
 
 def _fix_common_grammar(text: str) -> str:
     """Auto-correct the most common LLM grammar errors in Russian text."""
@@ -277,6 +292,9 @@ def _fix_common_grammar(text: str) -> str:
     text = _REFLEXIVE_LASIA.sub(lambda m: m.group(0)[:-4] + 'лась', text)
     # "вернулося" → "вернулось"
     text = _REFLEXIVE_LOSIA.sub(lambda m: m.group(0)[:-4] + 'лось', text)
+    # "Глава первый" → "Глава первая" (глава — feminine noun)
+    for pattern, replacement in _CHAPTER_ORDINALS:
+        text = pattern.sub(replacement, text)
     # Replace ✦ (not in DejaVu fonts, shows as box in PDF) with ◆
     text = _SPECIAL_CHAR.sub('◆', text)
     return text
@@ -449,6 +467,13 @@ def _prompt(payload: dict, archetype: dict | None = None) -> str:
         f'КАЖДЫЙ промпт — КОНКРЕТНАЯ ЖИВАЯ СЦЕНА из текста: кто что делает, где, '
         f'{animal} активно участвует в каждом кадре. '
         'НЕЛЬЗЯ описывать внешность героя — она добавится автоматически.\n'
+        'ВТОРИЧНЫЕ ПЕРСОНАЖИ — СТРОГАЯ КОНСИСТЕНТНОСТЬ:\n'
+        'Если в истории есть именованный вторичный персонаж (друг, подруга, наставник и т.д.) '
+        'и он появляется более чем в одном промпте — ПРИДУМАЙ ему ФИКСИРОВАННОЕ описание '
+        '(пол, примерный возраст, цвет волос, характерная одежда) и вставляй ДОСЛОВНО '
+        'одни и те же слова описания в КАЖДЫЙ промпт где он есть. '
+        'Пример: "a boy age 8 with short dark curly hair wearing a green jacket" — '
+        'эта фраза должна быть ИДЕНТИЧНА во всех промптах с этим персонажем.\n'
         'КАЖДЫЙ промпт начинается с АКТИВНОГО ГЛАГОЛА. '
         'ОБЯЗАТЕЛЬНО указывай план съёмки: "wide establishing shot" / "medium full-body shot" / '
         '"dynamic wide-angle shot".\n'
@@ -592,9 +617,13 @@ _HOBBY_VERB: dict[str, str] = {
 
 
 def _name_gen(name: str) -> str:
-    """Genitive case for names: Митя→Мити, Маша→Маши, Иван→Ивана."""
-    if name.endswith('я') or name.endswith('а'):
+    """Genitive case for names: Митя→Мити, Маша→Маши, Лера→Леры, Иван→Ивана."""
+    if name.endswith('я'):
         return name[:-1] + 'и'
+    if name.endswith('а'):
+        pre = name[-2].lower() if len(name) > 1 else ''
+        # After sibilants/velars → и (Маша→Маши); after others → ы (Лера→Леры)
+        return name[:-1] + ('и' if pre in 'гкхжшщчц' else 'ы')
     return name + 'а'
 
 

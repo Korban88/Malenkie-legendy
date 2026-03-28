@@ -97,8 +97,11 @@ def _to_genitive(name: str) -> str:
     if len(n) < 2:
         return n
     last = n[-1].lower()
+    pre = n[-2].lower() if len(n) > 1 else ''
     if last == 'а':
-        return n[:-1] + 'и'
+        # After sibilants / velars (г,к,х,ж,ш,щ,ч,ц) → и (Маша→Маши, Наташа→Наташи)
+        # After other consonants → ы (Лера→Леры, Нина→Нины, Алина→Алины)
+        return n[:-1] + ('и' if pre in 'гкхжшщчц' else 'ы')
     if last == 'я':
         return n[:-1] + 'и'
     if last == 'й':
