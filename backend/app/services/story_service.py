@@ -2,7 +2,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Child, Story, User
+from ..models import Child, Order, Story, User
 from .image_service import generate_images
 from .pdf_service import generate_pdf
 from .text_service import choose_style, generate_story_payload
@@ -77,6 +77,24 @@ def generate_story(db: Session, payload: dict) -> Story:
     user = get_or_create_user(db, payload['external_user_id'], payload.get('channel', 'telegram'))
     child = get_or_create_child(db, payload, user.id)
 
+    # Если оплата через Telegram Stars — создаём Order
+    order_id = payload.get('order_id')
+    if not order_id and payload.get('telegram_payment_charge_id'):
+        photo_enabled = payload.get('photo_enabled', False)
+        order = Order(
+            user_id=user.id,
+            child_id=child.id,
+            tariff='story_with_photo' if photo_enabled else 'story',
+            amount_rub=200 if photo_enabled else 150,  # сумма в XTR
+            provider='telegram_stars',
+            status='paid',
+            provider_payment_id=payload['telegram_payment_charge_id'],
+            meta={'currency': 'XTR'},
+        )
+        db.add(order)
+        db.flush()
+        order_id = order.id
+
     max_episode = db.scalar(select(func.max(Story.episode_number)).where(Story.child_id == child.id)) or 0
     if get_settings().force_episode_one:
         episode_number = 1
@@ -102,7 +120,7 @@ def generate_story(db: Session, payload: dict) -> Story:
 
     story = Story(
         child_id=child.id,
-        order_id=payload.get('order_id'),
+        order_id=order_id,
         episode_number=episode_number,
         style=style,
         status='generating',

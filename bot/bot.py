@@ -16,10 +16,15 @@ from aiogram.types import (
     InlineKeyboardButton,
     BufferedInputFile,
     FSInputFile,
+    LabeledPrice,
+    PreCheckoutQuery,
 )
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8010")
+
+STORY_PRICE_XTR = 150           # Telegram Stars, без фото
+STORY_WITH_PHOTO_PRICE_XTR = 200  # Telegram Stars, с фото
 
 STEP_IMAGES_DIR = Path('/opt/malenkie-legendy/static/ui')
 STEP_IMAGES: dict[str, str] = {
@@ -103,6 +108,7 @@ class Form(StatesGroup):
     place = State()
     photo_choice = State()
     photo_upload = State()
+    awaiting_payment = State()
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +529,7 @@ async def cb_photo_choice(call: CallbackQuery, state: FSMContext):
         await state.set_state(Form.photo_upload)
     else:
         await state.update_data(photo_base64=None, photo_enabled=False)
+        await call.message.answer("🪄 Создаю сказку — это займёт 3–5 минут...")
         await _generate(call.message, state)
     await call.answer()
 
@@ -539,7 +546,7 @@ async def form_photo(message: Message, state: FSMContext):
     photo_bytes = downloaded.read()
     photo_b64 = base64.b64encode(photo_bytes).decode()
     await state.update_data(photo_base64=photo_b64, photo_enabled=True, photo_consent=True)
-    await message.answer("✅ Фото получено! Создаю сказку...")
+    await message.answer("✅ Фото получено! Создаю сказку — это займёт 3–5 минут...")
     await _generate(message, state)
 
 
@@ -568,6 +575,47 @@ async def _send_image(message: Message, img_url: str, caption: str = '') -> bool
 
 
 # ---------------------------------------------------------------------------
+# Оплата (Telegram Stars)
+# ---------------------------------------------------------------------------
+
+async def _request_payment(trigger_message: Message, state: FSMContext):
+    data = await state.get_data()
+    child_name = data.get("child_name", "Герой")
+    photo_enabled = data.get("photo_enabled", False)
+    price_xtr = STORY_WITH_PHOTO_PRICE_XTR if photo_enabled else STORY_PRICE_XTR
+    tariff_label = "с иллюстрацией по фото" if photo_enabled else "с иллюстрациями"
+
+    await state.set_state(Form.awaiting_payment)
+    await trigger_message.answer_invoice(
+        title=f"✨ Сказка для {child_name}",
+        description=f"Персональная сказка {tariff_label} — 1 эпизод",
+        payload=f"story_{trigger_message.chat.id}",
+        currency="XTR",
+        prices=[LabeledPrice(label="Сказка", amount=price_xtr)],
+    )
+
+
+@dp.pre_checkout_query()
+async def pre_checkout(query: PreCheckoutQuery):
+    await query.answer(ok=True)
+
+
+@dp.message(F.successful_payment)
+async def successful_payment_handler(message: Message, state: FSMContext):
+    charge_id = message.successful_payment.telegram_payment_charge_id
+    await state.update_data(telegram_payment_charge_id=charge_id)
+    await message.answer("✅ Оплата прошла! Создаю сказку — это займёт 3–5 минут...")
+    await _generate(message, state)
+
+
+@dp.message(Form.awaiting_payment)
+async def awaiting_payment_fallback(message: Message):
+    await message.answer(
+        "⏳ Ожидаю оплату. Нажми кнопку «Оплатить» выше или напиши /start чтобы начать заново."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Генерация сказки
 # ---------------------------------------------------------------------------
 
@@ -575,19 +623,20 @@ async def _generate(trigger_message: Message, state: FSMContext):
     data = await state.get_data()
     await state.clear()
 
-    child_name   = data.get("child_name", "Герой")
-    age          = data.get("age", 7)
-    gender       = data.get("gender", "neutral")
-    purpose      = data.get("purpose", "bedtime")
-    style        = data.get("style", "auto")
-    image_style  = data.get("image_style", "watercolor")
-    animal       = data.get("favorite_animal", "кот")
-    color        = data.get("favorite_color", "синий")
-    hobby        = data.get("hobby", "рисование")
-    place        = data.get("favorite_place", "лес")
-    photo_b64    = data.get("photo_base64")
+    child_name      = data.get("child_name", "Герой")
+    age             = data.get("age", 7)
+    gender          = data.get("gender", "neutral")
+    purpose         = data.get("purpose", "bedtime")
+    style           = data.get("style", "auto")
+    image_style     = data.get("image_style", "watercolor")
+    animal          = data.get("favorite_animal", "кот")
+    color           = data.get("favorite_color", "синий")
+    hobby           = data.get("hobby", "рисование")
+    place           = data.get("favorite_place", "лес")
+    photo_b64       = data.get("photo_base64")
     photo_enabled   = data.get("photo_enabled", False)
     photo_consent   = data.get("photo_consent", False)
+    charge_id       = data.get("telegram_payment_charge_id")
 
     img_style_labels = {
         'watercolor': 'акварель', 'ghibli': 'Студия Гибли', 'soviet': 'Советская анимация',
@@ -629,6 +678,8 @@ async def _generate(trigger_message: Message, state: FSMContext):
     }
     if photo_b64:
         payload["photo_base64"] = photo_b64
+    if charge_id:
+        payload["telegram_payment_charge_id"] = charge_id
 
     try:
         async with httpx.AsyncClient(timeout=480) as client:

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 
 import httpx
@@ -6,6 +7,7 @@ import httpx
 from ..config import get_settings
 
 settings = get_settings()
+log = logging.getLogger(__name__)
 
 
 STYLE_BY_AGE = {
@@ -384,6 +386,28 @@ def _prompt(payload: dict) -> str:
     )
 
 
+def _call_openai_direct(payload: dict) -> dict:
+    """Call OpenAI gpt-4o-mini directly (bypass OpenRouter) using the same prompt.
+
+    Used as secondary fallback when OpenRouter is unavailable, so users always
+    get a unique LLM-generated story instead of the static template.
+    """
+    if not settings.openai_api_key:
+        raise RuntimeError('OPENAI_API_KEY not configured — cannot use OpenAI direct fallback')
+    from openai import OpenAI
+    client = OpenAI(api_key=settings.openai_api_key)
+    prompt_text = _prompt(payload)
+    resp = client.chat.completions.create(
+        model='gpt-4o-mini',
+        messages=[{'role': 'user', 'content': prompt_text}],
+        temperature=0.88,
+        max_tokens=8000,
+        response_format={'type': 'json_object'},
+    )
+    raw = resp.choices[0].message.content
+    return json.loads(raw)
+
+
 def _call_openrouter(payload: dict) -> dict:
     from ..services.cost_guard import check as _guard_check, CostGuardError  # noqa: F401
 
@@ -422,6 +446,34 @@ def _call_openrouter(payload: dict) -> dict:
     return json.loads(raw)
 
 
+_HOBBY_VERB: dict[str, str] = {
+    'рисование':   'рисовать',
+    'спорт':       'заниматься спортом',
+    'музыка':      'играть музыку',
+    'чтение':      'читать',
+    'игры':        'играть',
+    'готовка':     'готовить',
+    'наука':       'проводить опыты',
+    'садоводство': 'ухаживать за растениями',
+}
+
+
+def _name_gen(name: str) -> str:
+    """Genitive case for names: Митя→Мити, Маша→Маши, Иван→Ивана."""
+    if name.endswith('я') or name.endswith('а'):
+        return name[:-1] + 'и'
+    return name + 'а'
+
+
+def _name_acc(name: str) -> str:
+    """Accusative case for names: Митя→Митю, Маша→Машу, Иван→Ивана."""
+    if name.endswith('я'):
+        return name[:-1] + 'ю'
+    if name.endswith('а'):
+        return name[:-1] + 'у'
+    return name + 'а'
+
+
 _ANIMAL_GRAM_GENDER: dict[str, str] = {
     # masculine
     'кот': 'male', 'котёнок': 'male', 'пёс': 'male', 'щенок': 'male',
@@ -441,8 +493,36 @@ def _animal_gender(animal: str) -> str:
     key = animal.lower().strip()
     if key in _ANIMAL_GRAM_GENDER:
         return _ANIMAL_GRAM_GENDER[key]
-    # Heuristic fallback: -а/-я endings → female, else male
-    return 'female' if key and key[-1] in 'аяь' and key not in ('медведь',) else 'male'
+    # Heuristic: -а/-я endings → female; -ь needs context (default female for unknown); else male
+    last = key[-1] if key else ''
+    if last in 'ая':
+        return 'female'
+    if last == 'ь':
+        return 'female'   # most unknown -ь animals (форель, лань, рысь...) are feminine
+    return 'male'
+
+
+def _animal_genitive(animal: str, ag: str) -> str:
+    """Generate genitive case (родительный падеж) of an animal noun."""
+    w = animal.strip()
+    if not w:
+        return w
+    last = w[-1].lower()
+    pre = w[-2].lower() if len(w) > 1 else ''
+    if last == 'й':
+        return w[:-1] + 'я'            # попугай → попугая
+    if last == 'ь':
+        if ag == 'female':
+            return w[:-1] + 'и'        # форель → форели, лошадь → лошади
+        return w[:-1] + 'я'            # медведь → медведя
+    if last == 'а':
+        # после шипящих и г/к/х → и; иначе → ы
+        return w[:-1] + ('и' if pre in 'гкхжшщч' else 'ы')  # лиса→лисы, кошка→кошки
+    if last == 'я':
+        return w[:-1] + 'и'            # обезьяна→обезьяны... wait 'яна' ends 'а'
+    if last in 'бвгджзклмнпрстфхцчшщ':
+        return w + 'а'                 # волк→волка, кот→кота, тигр→тигра
+    return w + 'а'                     # fallback
 
 
 def _template_fallback(payload: dict) -> dict:
@@ -458,115 +538,257 @@ def _template_fallback(payload: dict) -> dict:
 
     # Hero gender forms
     if gender == 'female':
-        vyshel = 'вышла'; poshel = 'пошла'; uvidel = 'увидела'; skazal = 'сказала'
-        nashel = 'нашла'; vernulsya = 'вернулась'; podoshel = 'подошла'
-        uslyshal = 'услышала'; podnyal = 'подняла'; pobezhal = 'побежала'
-        ponyal = 'поняла'; ulybнulsya = 'улыбнулась'; vzyal = 'взяла'
-        zametil = 'заметила'; pron = 'она'; g_suf = 'а'; zasmeyal = 'засмеялась'
+        vyshel = 'вышла'; poshel = 'пошла'; skazal = 'сказала'
+        vernulsya = 'вернулась'; pobezhal = 'побежала'
+        ponyal = 'поняла'; vzyal = 'взяла'; uslyshal = 'услышала'
+        zametil = 'заметила'; pron = 'она'; g_suf = 'а'
+        zasmeyal = 'засмеялась'; sprosil = 'спросила'
+        oglyadelsya = 'огляделась'; ego = 'её'; sebya_suf = 'саму'
     else:
-        vyshel = 'вышел'; poshel = 'пошёл'; uvidel = 'увидел'; skazal = 'сказал'
-        nashel = 'нашёл'; vernulsya = 'вернулся'; podoshel = 'подошёл'
-        uslyshal = 'услышал'; podnyal = 'поднял'; pobezhal = 'побежал'
-        ponyal = 'понял'; ulybнulsya = 'улыбнулся'; vzyal = 'взял'
-        zametil = 'заметил'; pron = 'он'; g_suf = ''; zasmeyal = 'засмеялся'
+        vyshel = 'вышел'; poshel = 'пошёл'; skazal = 'сказал'
+        vernulsya = 'вернулся'; pobezhal = 'побежал'
+        ponyal = 'понял'; vzyal = 'взял'; uslyshal = 'услышал'
+        zametil = 'заметил'; pron = 'он'; g_suf = ''
+        zasmeyal = 'засмеялся'; sprosil = 'спросил'
+        oglyadelsya = 'огляделся'; ego = 'его'; sebya_suf = 'самого'
 
-    # Animal grammatical gender forms (separate from hero gender!)
+    # Animal grammatical gender forms (independent of hero gender!)
     _ag = _animal_gender(animal)
-    an_skazal = 'сказала' if _ag == 'female' else 'сказал'
-    an_iskal = 'искала' if _ag == 'female' else 'искал'
-    an_suf = 'а' if _ag == 'female' else ''
-    an_pron = 'она' if _ag == 'female' else 'он'
-    an_okazalsya = 'оказалась' if _ag == 'female' else 'оказался'
-    an_obychny = 'обычная' if _ag == 'female' else 'обычный'
+    an_skazal     = 'сказала'    if _ag == 'female' else 'сказал'
+    an_iskal      = 'искала'     if _ag == 'female' else 'искал'
+    an_suf        = 'а'          if _ag == 'female' else ''
+    an_pron       = 'она'        if _ag == 'female' else 'он'
+    an_okazalsya  = 'оказалась'  if _ag == 'female' else 'оказался'
+    an_obychny    = 'обычная'    if _ag == 'female' else 'обычный'
+    an_ulyb       = 'улыбнулась' if _ag == 'female' else 'улыбнулся'
+    an_genit_pron = 'неё'        if _ag == 'female' else 'него'
+
+    hobby_verb = _HOBBY_VERB.get(hobby.lower().strip(), f'заниматься {hobby}ом')
+    name_gen = _name_gen(name)
+    name_acc = _name_acc(name)
 
     style_titles = {
-        'magic': 'и Тайна Хрустального Камня',
-        'magical': 'и Тайна Хрустального Камня',
-        'adventure': 'и Остров Потерянных Карт',
-        'nature': 'и Говорящий Родник',
-        'space': 'и Звёздный Маяк',
-        'tender': 'и Серебряный Колокольчик',
-        'epic': 'и Меч Рассвета',
+        'magic':     'и Хранитель Утреннего Света',
+        'magical':   'и Хранитель Утреннего Света',
+        'adventure': 'и Карта Незнакомых Дорог',
+        'nature':    'и Говорящий Родник',
+        'space':     'и Звёздный Маяк',
+        'tender':    'и Серебряный Колокольчик',
+        'epic':      'и Меч Рассвета',
     }
     ep_suffix = f' (Эпизод {episode})' if episode > 1 else ''
     title = f'{name} {style_titles.get(style, "и Волшебное Приключение")}{ep_suffix}'
 
-    text = (
-        f"Глава первая. Зов из {place}а\n\n"
-        f"Тот день начался обычно. {name} {vyshel} на улицу и сразу остановил{g_suf}ся — "
-        f"что-то изменилось. Воздух в {place}е пах иначе: острее, живее, будто перед грозой.\n\n"
-        f"— Странно, — пробормотал{g_suf} {name} и {poshel} ближе к деревьям.\n\n"
-        f"Из-за старого дуба выскочило что-то маленькое. "
-        f"Это {an_okazalsya} {animal} — но не {an_obychny}. "
-        f"Шерсть переливалась, глаза светились, и, главное — {an_pron} говорил{an_suf}.\n\n"
-        f"— Наконец-то, — {an_skazal} {animal} без лишних предисловий. — Я {an_iskal} тебя три дня.\n\n"
-        f"— Меня? — {uvidel} {name} недоумение во взгляде {animal}а. — Почему меня?\n\n"
-        f"— Потому что ты умеешь {hobby}. В {place}е нет больше никого, кто умеет. "
-        f"А нам это очень нужно.\n\n"
-        f"Так {name} узнал{g_suf}: в глубине {place}а живёт Страж Равновесия — "
-        f"древнее существо, которое следит, чтобы мир не перекосился. "
-        f"Но три дня назад Страж заснул, и теперь в {place}е всё начало меняться не в ту сторону.\n\n"
+    # Alternate between two plot templates by name seed to avoid repetition
+    seed = sum(ord(c) for c in name) + episode
+    use_variant_b = (seed % 2 == 1)
 
-        f"Глава вторая. Испытание первое\n\n"
-        f"Они шли долго. {animal.capitalize()} объяснял{an_suf} на ходу: "
-        f"чтобы разбудить Стража, нужно пройти три испытания. Первое — Зеркальный Лабиринт.\n\n"
-        f"Лабиринт выглядел как сад из стекла: стены отражали всё, и можно было идти часами, "
-        f"возвращаясь к началу.\n\n"
-        f"— Обычной дорогой не выйдешь, — {an_skazal} {animal}. — Здесь нужна твоя голова.\n\n"
-        f"{name} огляделся. Стены отражали его самого — сотни раз, под разными углами. "
-        f"И тут {ponyal} {name}: отражения слегка запаздывали. Буквально на полшага.\n\n"
-        f"— Нужно идти против отражения, — {skazal} {name} медленно. — Туда, куда оно НЕ идёт.\n\n"
-        f"Это было труднее, чем казалось — каждый шаг противоречил инстинктам. "
-        f"Но через десять минут они стояли у выхода. {animal.capitalize()} смотрел{an_suf} на {name} с чем-то похожим на уважение.\n\n"
+    if not use_variant_b:
+        # --- Template A: Страж ---
+        text = (
+            f"Глава первая. Странное утро в {place}е\n\n"
+            f"Тот день начался обычно — {name} {vyshel} на улицу и сразу остановил{g_suf}ся. "
+            f"Что-то было не так. Воздух в {place}е пах иначе: острее, живее, совсем не как обычно.\n\n"
+            f"— Странно, — пробормотал{g_suf} {name} вполголоса и {oglyadelsya} по сторонам.\n\n"
+            f"Из-за широкого дерева выскочило что-то маленькое и быстрое. "
+            f"Это {an_okazalsya} {animal} — но совсем не {an_obychny}. "
+            f"Глаза светились тёплым светом, и, главное, — {an_pron} говорил{an_suf}.\n\n"
+            f"— Наконец-то! — {an_skazal} {animal} без приветствий. — Я {an_iskal} тебя с самого утра.\n\n"
+            f"— Меня? — удивил{g_suf}ся {name}. — Почему именно меня?\n\n"
+            f"— Потому что ты умеешь {hobby_verb}. В {place}е больше никто не умеет. "
+            f"А нам сейчас это очень нужно.\n\n"
+            f"Так {name} узнал{g_suf}: в глубине {place}а дремлет Страж — "
+            f"древнее существо, которое следит за порядком вещей. "
+            f"Три дня назад Страж заснул, и {place} начал меняться не в ту сторону.\n\n"
 
-        f"Глава третья. Разговор у реки\n\n"
-        f"За лабиринтом текла река. Не обычная — она текла бесшумно, и вода в ней была тёмной, "
-        f"как поздний вечер. На берегу сидел старик с удочкой, хотя рыбы в реке явно не было.\n\n"
-        f"— Второе испытание, — сказал старик, не оборачиваясь. — Ответь мне на вопрос.\n\n"
-        f"— Какой? — спросил{g_suf} {name}.\n\n"
-        f"— Что страшнее: потерять что-то важное или никогда не иметь?\n\n"
-        f"{name} думал долго. {animal.capitalize()} молчал{an_suf} рядом — "
-        f"видно, что это испытание не для {an_pron}.\n\n"
-        f"— Никогда не иметь, — {skazal} наконец {name}. — Потому что потеря — это значит, что оно было. "
-        f"А если не было — ты даже не знаешь, чего лишился.\n\n"
-        f"Старик кивнул и исчез вместе с удочкой. Река начала светлеть.\n\n"
+            f"Глава вторая. Мост Молчания\n\n"
+            f"Они шли туда, где {place} становился всё бледнее. "
+            f"{animal.capitalize()} объяснял{an_suf} на ходу: "
+            f"чтобы разбудить Стража, нужно пройти три испытания. Первое — Мост Молчания.\n\n"
+            f"Мост был необычным: он держался, только пока никто не говорил вслух. "
+            f"Стоило открыть рот — доски начинали дрожать.\n\n"
+            f"— Как же нам общаться? — чуть не {skazal} {name} вслух, но вовремя остановил{g_suf}ся.\n\n"
+            f"{name} {oglyadelsya} и {ponyal}: на перилах были нарисованы значки — "
+            f"стрелки, точки, маленькие фигурки. Своя азбука. Нужно читать её, а не придумывать слова.\n\n"
+            f"Они перешли молча — {name} показывал{g_suf} дорогу знаками, {animal} следовал{an_suf} точно. "
+            f"На той стороне {animal} тихо кивнул{an_suf} — это было лучше любых слов.\n\n"
 
-        f"Глава четвёртая. {hobby.capitalize()} как ключ\n\n"
-        f"Третье испытание было самым странным: огромная каменная дверь с надписью "
-        f"«Открою тому, кто создаст то, чего здесь не было».\n\n"
-        f"— Что здесь есть? — {uslyshal} {name}.\n\n"
-        f"— Камень. Мох. Темнота. Тишина.\n\n"
-        f"— А чего нет?\n\n"
-        f"{animal.capitalize()} {ulybнulsya}: — Всего остального.\n\n"
-        f"{name} понял{g_suf}. Взял{g_suf} острый камень и начал{g_suf} "
-        f"использовать {hobby} — так, как умел{g_suf} только {pron}. "
-        f"Под руками {name}а что-то стало появляться: сначала тени, потом образы, потом почти настоящее. "
-        f"Дверь медленно открылась — как будто тоже удивилась.\n\n"
+            f"Глава третья. Хранитель\n\n"
+            f"За мостом стоял старый домик. "
+            f"Внутри сидел Хранитель — седой старичок с добрыми, но очень внимательными глазами.\n\n"
+            f"— Второе испытание, — сказал он, не поднимая взгляда. "
+            f"— Ответь честно на один вопрос.\n\n"
+            f"— Слушаю, — {skazal} {name}.\n\n"
+            f"— Когда тебе по-настоящему хорошо — ты один или с кем-то?\n\n"
+            f"{name} задумал{g_suf}ся. {animal.capitalize()} молчал{an_suf} рядом — "
+            f"это испытание было явно не для {an_genit_pron}.\n\n"
+            f"— По-настоящему хорошо — когда есть кто-то рядом, — {skazal} наконец {name}. "
+            f"— Даже если молчим. Главное — что не один.\n\n"
+            f"Хранитель кивнул.\n"
+            f"— Правильный ответ — тот, которому сам веришь. Ты ответил{g_suf} честно.\n\n"
 
-        f"Глава пятая. Пробуждение\n\n"
-        f"За дверью спал Страж. Он был огромным — больше дерева, меньше горы — "
-        f"и совсем не страшным. Скорее усталым.\n\n"
-        f"— Как его разбудить? — шёпотом спросил{g_suf} {name}.\n\n"
-        f"— Позови по имени, — {an_skazal} {animal}. — Его имя — «Равновесие».\n\n"
-        f"— Равновесие, — {skazal} {name} вслух. Не громко — но уверенно.\n\n"
-        f"Страж открыл глаза. Посмотрел на {name}а долгим взглядом.\n\n"
-        f"— Три дня прошло, — произнёс он голосом, похожим на эхо в пещере. — Я думал, никто не придёт.\n\n"
-        f"— Мы пришли, — {skazal} {name}. — Потому что {place} — это важно.\n\n"
-        f"Страж {zasmeyal}ся — тихо, как будто забыл, как это делается. И {place} снова стал собой.\n\n"
-        f"Когда {name} {vernulsya} домой, {animal} {pobezhal} рядом. "
-        f"Ни слова о том, что было. Некоторые вещи не нуждаются в словах.\n\n"
-        f"А потом {name} {zametil}: всё, что случилось, изменило не {place} — изменило {pron} самого."
-    )
+            f"Глава четвёртая. Умение как ключ\n\n"
+            f"Третье испытание оказалось самым необычным. "
+            f"Перед {name_gen} стояла старая деревянная дверь без ручки и без замка.\n\n"
+            f"— Она открывается не ключом, — {an_skazal} {animal} тихо. — Только тем, что умеешь ты.\n\n"
+            f"{name} {ponyal} не сразу. {vzyal.capitalize()} глубокий вдох и начал{g_suf} "
+            f"делать то, что умел{g_suf} лучше всего — {hobby_verb}. "
+            f"Поначалу казалось, что ничего не происходит. "
+            f"Но потом в воздухе что-то сдвинулось — тихо, почти незаметно.\n\n"
+            f"Дверь медленно открылась — как будто наконец услышала то, чего давно ждала.\n\n"
+            f"— Я знал{an_suf}, — тихо {an_skazal} {animal}.\n\n"
 
-    image_prompts = [
-        f'leaping through magical {place} in an epic adventure moment, {animal} racing alongside, '
-        f'golden magical light bursting overhead, wide dramatic shot, sense of great adventure beginning',
-        f'crouching to face small magical {animal} that has appeared from nowhere, '
-        f'both looking at each other with surprise and wonder, dappled magical light, medium shot',
-        f'running through hall of mirrored glass walls, reflections multiplying everywhere, '
-        f'determined expression, dramatic low angle, cool silver light with warm glow ahead',
-        f'using {hobby} skill in a daring moment, magical energy radiating from hands, '
-        f'{animal} watching intently, warm golden light, tense dramatic atmosphere',
+            f"Глава пятая. Пробуждение\n\n"
+            f"За дверью дремал Страж. Огромный — больше любого дерева, меньше горы — "
+            f"и совсем не пугающий. Скорее очень усталый.\n\n"
+            f"— Как его разбудить? — шёпотом {sprosil} {name}.\n\n"
+            f"— Позови его так, чтобы он услышал сердцем, — {an_skazal} {animal}.\n\n"
+            f"{name} {skazal} негромко, но уверенно: — Мы здесь. {place.capitalize()} ждёт тебя.\n\n"
+            f"Страж открыл глаза. Посмотрел на {name_acc} долгим и удивлённым взглядом.\n\n"
+            f"— Давно никто не приходил, — произнёс он медленно. — Я думал, всем всё равно.\n\n"
+            f"— Не всем, — {skazal} {name}. — Нам — не всё равно.\n\n"
+            f"Страж {zasmeyal} — тихо, как будто заново вспоминал, как это делается. "
+            f"И {place} вокруг стал прежним — живым и настоящим.\n\n"
+            f"Когда {name} {vernulsya} домой, {animal} {pobezhal} рядом. "
+            f"О том, что было, не говорили — некоторые вещи не нуждаются в словах.\n\n"
+            f"А потом {name} {zametil}: {place} не изменился. Изменил{g_suf}ся {pron} {sebya_suf}."
+        )
+        image_prompts = [
+            f'running through the magical {place} at dawn, {animal} leaping alongside, '
+            f'golden light filtering through, wide establishing shot, sense of adventure beginning',
+            f'crossing a wooden bridge in {place} in total silence, moving carefully, '
+            f'{animal} following closely, atmospheric mist below, wide shot',
+            f'sitting opposite a wise old man in a cosy small house, {animal} nearby, '
+            f'warm lamplight, thoughtful atmosphere, medium wide shot',
+            f'channelling the power of {hobby} before an ancient wooden door in {place}, '
+            f'soft magical glow, {animal} watching with hope, warm amber light, medium shot',
+            f'celebrating with {animal} in a beautifully restored {place}, '
+            f'golden light everywhere, joyful wide shot, magical sparkles, triumphant mood',
+        ]
+        recap_items = [
+            f'{name} прошёл{"а" if gender == "female" else ""} три испытания в {place}е.',
+            f'Разбудил{"а" if gender == "female" else ""} Стража.',
+            f'Открыл{"а" if gender == "female" else ""}: умение {hobby_verb} — настоящая суперсила.',
+        ]
+        next_hook = (
+            f'Той ночью {name} слышал{g_suf} знакомый голос во сне. '
+            f'{animal.capitalize()} говорил{an_suf}: "В {place}е появилось кое-что новое. '
+            f'Я видел{an_suf} сам. Тебе нужно это увидеть..."'
+        )
+        world_locations = [place, 'Мост Молчания', 'Домик Хранителя']
+        world_resolved = ['Страж разбужен']
+
+    else:
+        # --- Template B: Исчезнувшие краски ---
+        text = (
+            f"Глава первая. Когда {place} стал серым\n\n"
+            f"Всё началось утром. {name} {vyshel} из дома — и остановил{g_suf}ся как вкопанный{g_suf}.\n\n"
+            f"Что-то было не так с {place}ем. Краски будто смыло: всё стало блёклым и тусклым. "
+            f"Даже солнце казалось белым и холодным, словно забыло, как светить.\n\n"
+            f"— Это началось вчера ночью, — раздался голос рядом.\n\n"
+            f"{name} обернул{g_suf}ся. Рядом стоял{an_suf} {animal} — глаза его светились по-прежнему тепло.\n\n"
+            f"— Туманный Вор забрал все краски. Он прячется в Серебряной Пещере, — {an_skazal} {animal}. "
+            f"— Ты умеешь {hobby_verb}. Именно поэтому только ты можешь ему помочь.\n\n"
+            f"— Помочь вору? — удивил{g_suf}ся {name}.\n\n"
+            f"— Он не злой, — тихо {an_skazal} {animal}. — Он просто очень одинок.\n\n"
+
+            f"Глава вторая. Путь через туман\n\n"
+            f"Они шли туда, где {place} становился всё бледнее. "
+            f"Дорогу указывал{an_suf} {animal}: {an_pron} чувствовал{an_suf} тепло там, "
+            f"где глаза видели только серое.\n\n"
+            f"На полпути дорогу перегородил Туманный Страж — огромная фигура из клубящегося дыма.\n\n"
+            f"— Назад, — произнёс он. — Чужим здесь не место.\n\n"
+            f"— Мы не чужие, — {skazal} {name} спокойно. — Мы пришли помочь.\n\n"
+            f"Страж замолчал. В его туманных глазах мелькнуло что-то похожее на удивление. "
+            f"Таких слов он, кажется, не слышал очень давно. Он посторонился.\n\n"
+            f"{animal.capitalize()} тихо кивнул{an_suf} {name_acc}: — Ты {skazal}{g_suf} правильно.\n\n"
+
+            f"Глава третья. Туманный Вор\n\n"
+            f"В глубине пещеры среди серых камней сидело маленькое существо. "
+            f"Оно было почти незаметным — такое же бесцветное, как похищенный мир вокруг.\n\n"
+            f"— Ты Туманный Вор? — {sprosil} {name}.\n\n"
+            f"— Я не хотел красть, — прошептало существо. — Я просто хотел посмотреть. "
+            f"Краски были такими красивыми. А у меня своих никогда не было.\n\n"
+            f"{name} {ponyal}: это было не воровство. Это было одиночество.\n\n"
+            f"— А ты умеешь видеть красоту? — {sprosil} {name} тихо.\n\n"
+            f"— Не знаю. Никто никогда не показывал, — ответило существо.\n\n"
+            f"{animal.capitalize()} {an_skazal} мягко: — Сейчас покажет.\n\n"
+
+            f"Глава четвёртая. Дар\n\n"
+            f"{name} {oglyadelsya}. В пещере было темно и серо, "
+            f"но {pron} знал{g_suf}: умение {hobby_verb} — это не просто занятие. "
+            f"Это способность создавать то, чего раньше не было.\n\n"
+            f"Начал{g_suf}. Медленно, сосредоточенно — так, как умел{g_suf} только {pron}.\n\n"
+            f"Сначала в воздухе появились лёгкие золотистые искры. "
+            f"Потом краски начали возвращаться — сначала по одной, потом всё быстрее.\n\n"
+            f"Туманный Вор смотрел широко открытыми глазами — впервые видел, "
+            f"как кто-то создаёт красоту и дарит её просто так.\n\n"
+            f"— Можно... и мне попробовать? — прошептало существо.\n\n"
+            f"— Конечно, — {skazal} {name} с улыбкой. — Я покажу.\n\n"
+
+            f"Глава пятая. Возвращение красок\n\n"
+            f"Когда они вышли из пещеры, {place} был совсем другим. "
+            f"Краски вернулись — даже ярче прежнего, словно {place} соскучил{g_suf}ся по ним.\n\n"
+            f"Туманный Вор шёл рядом — уже не серый, а чуть золотистый по краям. "
+            f"И впервые не прятался.\n\n"
+            f"— Спасибо, — {an_skazal} {animal} {name_acc} тихо. — Ты {skazal}{g_suf} ему то, "
+            f"что не смог бы сказать я.\n\n"
+            f"— Я просто показал{g_suf}, — ответил{g_suf} {name}.\n\n"
+            f"— Иногда это самое важное, — {an_ulyb} {animal}.\n\n"
+            f"Когда {name} {vernulsya} домой, {animal} {pobezhal} рядом — "
+            f"и в воздухе между ними чувствовалось что-то тёплое, не требующее слов.\n\n"
+            f"А потом {name} {zametil}: в {place}е появился новый житель. "
+            f"И {pron} {ego} немного знал{g_suf}."
+        )
+        image_prompts = [
+            f'walking through a faded grey {place} with warmly glowing {animal} companion, '
+            f'striking contrast between colourless world and magical warm light, '
+            f'wide establishing shot, sense of mystery and quest',
+            f'facing a tall misty guardian figure on a grey path in {place}, '
+            f'standing confidently while {animal} stands close, cool silver mist, dramatic wide shot',
+            f'discovering a small colourless creature in a silver cave, '
+            f'{animal} approaching gently, warm light appearing, medium emotional shot',
+            f'using the power of {hobby} to fill the cave with golden colour and light, '
+            f'magical particles swirling, creature watching in wonder, {animal} beside, wide shot',
+            f'returning to a brilliantly colourful {place} with {animal} and a newly golden creature, '
+            f'joyful wide shot, warm golden light, magical sparkles everywhere',
+        ]
+        recap_items = [
+            f'{name} спас{"ла" if gender == "female" else ""} краски {place}а.',
+            f'Помог{"ла" if gender == "female" else ""} Туманному Вору найти своё место.',
+            f'Открыл{"а" if gender == "female" else ""}: умение {hobby_verb} меняет мир.',
+        ]
+        next_hook = (
+            f'Перед сном {animal} шепнул{an_suf} {name_acc} кое-что важное: '
+            f'"В {place}е есть ещё одно место, о котором никто не знает. '
+            f'Я видел{an_suf} его сегодня — оно ждёт именно тебя."'
+        )
+        world_locations = [place, 'Серебряная Пещера']
+        world_resolved = ['Краски возвращены', 'Туманный Вор обрёл дом']
+
+    return {
+        'title': title,
+        'story_text': text,
+        'image_prompts': image_prompts,
+        'recap': recap_items,
+        'memory': {
+            'world_name': f'Волшебный {place.capitalize()}',
+            'world_state': {
+                'locations': world_locations,
+                'artifacts': [],
+                'resolved': world_resolved,
+            },
+            'character_traits': {
+                'courage': 'растёт',
+                'kindness': 'главная черта',
+                'special_power': f'умение {hobby_verb} как суперсила',
+            },
+            'character_level': episode,
+            'allies': [f'волшебный {animal}'],
+            'open_threads': [f'{animal.capitalize()} {an_iskal} кое-что новое в {place}е'],
+        },
+        'next_hook': next_hook,
+    }
         f'celebrating triumphant victory in {place} with {animal} companion, '
         f'joyful wide shot, golden sunset light, magical sparkles, peaceful yet triumphant mood',
     ]
@@ -596,11 +818,11 @@ def _template_fallback(payload: dict) -> dict:
             },
             'character_level': episode,
             'allies': [f'волшебный {animal}', 'Страж Равновесия'],
-            'open_threads': [f'{animal.capitalize()} упомянул{"а" if animal[-1] in "аяь" else ""} о втором {place}е'],
+            'open_threads': [f'{animal.capitalize()} упомянул{an_suf} о втором {place}е'],
         },
         'next_hook': (
-            f'Той ночью {name} слышал{"а" if gender == "female" else ""} знакомый голос во сне. '
-            f'{animal.capitalize()} говорил{"а" if animal[-1] in "аяь" else ""}: "Это был только первый {place}. '
+            f'Той ночью {name} слышал{g_suf} знакомый голос во сне. '
+            f'{animal.capitalize()} {an_govoril}: "Это был только первый {place}. '
             f'Есть ещё один. Там всё иначе..."'
         ),
     }
@@ -609,15 +831,25 @@ def _template_fallback(payload: dict) -> dict:
 def generate_story_payload(payload: dict) -> dict:
     payload['style'] = choose_style(payload['age'], payload.get('style', 'auto'))
     provider = settings.text_provider
+    name = payload.get('child_name', '?')
 
     if provider == 'openrouter':
+        # Try 1: OpenRouter
         try:
             result = _call_openrouter(payload)
-        except Exception:
-            if settings.backup_text_provider == 'template':
-                result = _template_fallback(payload)
-            else:
-                raise
+            log.info('[text] OpenRouter OK for %s', name)
+        except Exception as e1:
+            log.warning('[text] OpenRouter FAILED for %s: %s — trying OpenAI direct', name, e1)
+            # Try 2: OpenAI direct (same model, bypasses OpenRouter)
+            try:
+                result = _call_openai_direct(payload)
+                log.info('[text] OpenAI direct OK for %s', name)
+            except Exception as e2:
+                log.error('[text] OpenAI direct FAILED for %s: %s — using template fallback', name, e2)
+                if settings.backup_text_provider == 'template':
+                    result = _template_fallback(payload)
+                else:
+                    raise RuntimeError(f'All text providers failed. OpenRouter: {e1}. OpenAI: {e2}') from e2
     elif provider == 'template':
         result = _template_fallback(payload)
     else:
