@@ -922,43 +922,6 @@ def _template_fallback(payload: dict) -> dict:
         },
         'next_hook': next_hook,
     }
-        f'celebrating triumphant victory in {place} with {animal} companion, '
-        f'joyful wide shot, golden sunset light, magical sparkles, peaceful yet triumphant mood',
-    ]
-
-    recap_items = [
-        f'{name} прошёл{"а" if gender == "female" else ""} три испытания в {place}е.',
-        f'Разбудил{"а" if gender == "female" else ""} Стража Равновесия.',
-        f'Открыл{"а" if gender == "female" else ""}: {hobby} — настоящая суперсила.',
-    ]
-
-    return {
-        'title': title,
-        'story_text': text,
-        'image_prompts': image_prompts,
-        'recap': recap_items,
-        'memory': {
-            'world_name': f'Волшебный {place.capitalize()}',
-            'world_state': {
-                'locations': [place, 'Зеркальный Лабиринт', 'Тёмная Река'],
-                'artifacts': ['Ключ Равновесия'],
-                'resolved': ['Страж разбужен', 'Равновесие восстановлено'],
-            },
-            'character_traits': {
-                'courage': 'растёт',
-                'kindness': 'главная черта',
-                'special_power': f'умение {hobby}а как суперсила',
-            },
-            'character_level': episode,
-            'allies': [f'волшебный {animal}', 'Страж Равновесия'],
-            'open_threads': [f'{animal.capitalize()} упомянул{an_suf} о втором {place}е'],
-        },
-        'next_hook': (
-            f'Той ночью {name} слышал{g_suf} знакомый голос во сне. '
-            f'{animal.capitalize()} {an_govoril}: "Это был только первый {place}. '
-            f'Есть ещё один. Там всё иначе..."'
-        ),
-    }
 
 
 def generate_story_payload(payload: dict) -> dict:
