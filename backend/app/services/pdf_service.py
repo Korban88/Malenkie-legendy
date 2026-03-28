@@ -408,8 +408,11 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             if para.startswith('Глава'):
                 if current_chapter_title or current_paras:
                     chapters.append((current_chapter_title, current_paras))
-                current_chapter_title = para
-                current_paras = []
+                # If LLM put the first paragraph on the same line as chapter title
+                # (separated by \n, not \n\n), split them: title = first line only.
+                title_lines = para.split('\n')
+                current_chapter_title = title_lines[0].strip()
+                current_paras = [ln.strip() for ln in title_lines[1:] if ln.strip()]
             else:
                 current_paras.append(para)
         if current_chapter_title or current_paras:
@@ -455,6 +458,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 pdf.set_line_width(0.4)
                 pdf.line(MARGIN_OUTER + 20, pdf.get_y(), PAGE_W - MARGIN_OUTER - 20, pdf.get_y())
                 pdf.ln(5)
+                _body_font()  # reset font to body size after chapter heading
 
             # ── Chapter illustration: placed right after header, before text ──
             # Images appear in chapters 1, 3, 5 (0-based: 0, 2, 4) for even book-layout spread.
