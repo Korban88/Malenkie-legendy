@@ -305,17 +305,17 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
 
         # ── Image slot assignments ───────────────────────────────────────────
         # [0] = cover illustration (shown on cover page)
-        # [1] = scene for chapter 1 (opening event)
-        # [2] = scene for chapter 3 (with secondary characters)
-        # [3] = scene for chapter 5 (climax / finale)
-        # Chapters 2 and 4 are text-only — even distribution across the book.
+        # [1] = scene for chapter 1
+        # [2] = scene for chapter 2
+        # [3] = scene for chapter 3
+        # [4] = scene for chapter 4 (climax / finale)
+        # 4 chapters, each gets its own illustration.
         def _img(idx: int) -> Path | None:
             return local_images[idx] if idx < len(local_images) else None
 
         cover_img = _img(0)
         # Map story chapter index (0-based) → illustration index in local_images
-        # Chapters 0, 2, 4 get images [1], [2], [3] respectively — evenly spread.
-        _CHAPTER_IMG_MAP = {0: 1, 2: 2, 4: 3}
+        _CHAPTER_IMG_MAP = {0: 1, 1: 2, 2: 3, 3: 4}
 
         rr, rg, rb = C['RHD']
         ar, ag, ab = C['ACC']

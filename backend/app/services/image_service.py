@@ -14,53 +14,81 @@ logger = logging.getLogger(__name__)
 
 _IMG_STYLE_SUFFIX = {
     'watercolor': (
-        'soft delicate hand-painted watercolor illustration, gentle gradients, natural pigment flow, '
-        'subtle color transitions, slightly textured paper feel, light and airy atmosphere, '
-        'minimal linework, soft edges, warm emotional tone, storybook aesthetic, '
-        "children's book illustration quality, no harsh outlines, no digital gloss, "
-        'fully finished illustration, no sketch elements, no palette strips, no paint swatches, '
-        'no concept sheet, no unfinished areas, no random artifacts'
+        'TRADITIONAL WATERCOLOR ON PAPER — physical medium, not digital imitation: '
+        'visible cold-press watercolor paper grain and texture throughout the image, '
+        'transparent pigment washes with natural wet-on-wet color bleeds and blooms at edges, '
+        'white paper showing through in highlight and light areas — no solid white fill, '
+        'natural pigment granulation and slight irregularity at brushstroke edges, '
+        'colors built in luminous transparent overlapping layers like real watercolor, '
+        'warm off-white paper tone visible beneath paint, '
+        'soft organic edges, no sharp digital outlines, '
+        'illustration quality of Beatrix Potter, Quentin Blake, or Jill Barklem, '
+        'fully finished painting on textured watercolor paper, no sketch, no digital artifacts'
     ),
     'ghibli': (
-        'hand-drawn anime style inspired by classic Japanese animated films, soft natural lighting, '
-        'warm nostalgic atmosphere, expressive but simple faces, detailed but painterly backgrounds, '
-        'cozy magical realism, gentle color palette, cinematic framing, emotional storytelling composition, '
-        'clean linework, soft shading, fully rendered scene, no concept art look, no palettes, '
-        'no sketch artifacts, no text, no collage, no storyboard layout'
+        'STUDIO GHIBLI — exact visual style of Hayao Miyazaki films '
+        '"My Neighbor Totoro" (1988) and "Spirited Away" (2001): '
+        'hand-drawn 2D anime with soft rounded characters, large gentle expressive eyes, '
+        'extraordinarily detailed lush painterly backgrounds — '
+        'dense forest with dappled light, rich grass textures, warm golden sky, '
+        'soft watercolor-quality sky with detailed cumulus clouds, '
+        'warm earthy palette: rich forest greens, warm ochre, dusty rose, soft blue-grey, cream, '
+        'gentle magical atmosphere with visible hand-painted quality, '
+        'warm diffused natural lighting, no CGI, no 3D rendering, '
+        'same production art quality as original Ghibli cel animation cells'
     ),
     'soviet': (
-        'classic Soviet animation style, hand-drawn 2D illustration, inspired by traditional Eastern European '
-        'animated films, soft painterly backgrounds, expressive slightly stylized characters, '
-        'warm nostalgic tone, muted but rich color palette, gentle shading, subtle texture of brush or pencil, '
-        'emotionally sincere and calm atmosphere, simple but strong storytelling composition, '
-        "children's classic animation aesthetic, no modern glossy rendering, no 3D look, "
-        'fully finished illustration, no sketch page, no palette strips, no paint swatches, '
-        'no concept sheet, no digital artifacts, no text'
+        'SOVIET SOYUZMULTFILM ANIMATION — exact visual style of USSR cartoons '
+        '"Cheburashka" (1966), "Nu Pogodi!" (1969), "Kot Leopold" (1975), "Vinni-Pukh" (1969): '
+        'hand-drawn 2D cel animation look, bold expressive black outlines of varying weight, '
+        'flat color fills with minimal cel shading, '
+        'warm muted USSR palette: ochre yellow, terracotta orange, sage green, dusty cornflower blue, '
+        'cream white, brick red, warm brown — desaturated earthy tones, '
+        'simple rounded geometric character shapes with large round eyes and simple noses, '
+        'painted backgrounds in flat washes with soft horizon haze, '
+        'retro 1960s-1980s Soviet aesthetic, no gradients, no glow effects, no modern glossy look, '
+        'exactly the visual quality of original Soyuzmultfilm production cels'
     ),
     'pixar': (
-        'premium cinematic 3D animated feature film look, highly polished character design, '
-        'soft global illumination, volumetric light, expressive realistic eyes, smooth materials, '
-        'high detail faces, believable lighting, family-friendly fantasy mood, rich environment detail, '
-        'strong composition focus, fully rendered high-quality image, no concept art, no palette strips, '
-        'no paint swatches, no sketch look, no unfinished render, no artifacts'
+        'PIXAR ANIMATION STUDIOS — exact quality of films "Toy Story 3", "Up", "Brave", "Coco": '
+        'premium cinematic 3D CGI animation, highly polished subsurface skin rendering, '
+        'soft volumetric global illumination, expressive large eyes with detailed iris and catch-lights, '
+        'smooth rounded character designs with exaggerated proportions, '
+        'richly detailed textured environments, warm cinematic color grading, '
+        'professional studio lighting with soft fill and rim light, '
+        'family-friendly magical mood, fully rendered no artifacts, '
+        'same production quality as Pixar theatrical releases'
     ),
     'cartoon': (
-        'bright flat cartoon style, bold clean shapes, solid color fills, minimal shading, strong outlines, '
-        'simple expressive characters, playful composition, high contrast colors, vector-like clarity, '
-        'children-friendly design, clean and polished, no gradients overload, no painterly textures, '
-        'no sketch lines, no palette strips, no concept sheet, no artifacts, no text'
+        'CLASSIC AMERICAN CARTOON — exact style of Cartoon Network and early Disney Channel 2000s: '
+        'bold clean black outlines of uniform weight, solid flat color fills, '
+        'minimal cel shading — only simple cast shadows, '
+        'high-contrast saturated color palette, simple expressive character shapes, '
+        'clean vector-like linework, playful dynamic composition, '
+        'no painterly textures, no gradients, no realistic rendering, '
+        'fully finished flat illustration, no sketch, no artifacts'
     ),
     'storybook': (
-        "classic children's book illustration style, rich storytelling composition, "
-        'balanced detailed scene, soft painterly rendering, controlled brushwork, warm natural colors, '
-        'slightly textured traditional feel, high-quality publishing illustration, carefully composed scene, '
-        'emotionally clear, fully finished artwork, no sketch, no palettes, no paint swatches, '
-        'no concept art, no unfinished look, no artifacts'
+        "CLASSIC CHILDREN'S BOOK ILLUSTRATION — quality of published picture books "
+        'by Eric Carle, Maurice Sendak, or Chris Van Allsburg: '
+        'rich detailed storytelling scene, traditional mixed-media feel, '
+        'controlled ink linework with watercolor or gouache fill, '
+        'warm natural earthy color palette with rich deep tones, '
+        'slightly textured surface suggesting physical medium, '
+        'high-quality publishing illustration with strong compositional balance, '
+        'emotionally clear and narratively rich, fully finished artwork, '
+        'no sketch, no concept art, no unfinished areas'
     ),
     'disney': (
-        "classic Disney fairy-tale animation style, vibrant jewel-tone colors, elegant ink-outlined characters, "
-        'sparkling warm magical light, graceful expressive characters, rich detailed backgrounds, '
-        'fully rendered scene, no concept art, no palette strips, no sketch, no artifacts'
+        'CLASSIC DISNEY ANIMATION — exact style of "The Little Mermaid" (1989), '
+        '"Beauty and the Beast" (1991), "Aladdin" (1992): '
+        'hand-drawn 2D animation with elegant fluid character outlines, '
+        'vibrant jewel-tone color palette — deep sapphire, emerald, warm gold, rose, '
+        'sparkling warm magical light with visible glint effects, '
+        'graceful expressive characters with large almond-shaped eyes, '
+        'richly detailed painted backgrounds with romantic atmospheric depth, '
+        'fully rendered scene, same quality as Disney theatrical animation production cels, '
+        'no CGI, no 3D, no modern look'
     ),
 }
 
@@ -69,9 +97,11 @@ _BASE_QUALITY = (
     "Bright vibrant cheerful colours, warm sunlit happy atmosphere, "
     "wide establishing shot showing full scene, full body characters visible, "
     "high quality detailed professional illustration, safe for children, "
-    "CHILD as the main protagonist hero — secondary characters such as a wise elder, antagonist, "
-    "helper or magical creature MAY appear clearly in the scene when the prompt calls for them, "
-    "correct child anatomy, no unnamed background crowd"
+    "CHILD as the main protagonist hero — correct child anatomy. "
+    "STRICT CHARACTER RULE: include ONLY the characters explicitly named in this prompt. "
+    "Do NOT add random old men, old women, gnomes, elves, dwarves, strangers, background crowd, "
+    "or any animals/creatures not mentioned in the prompt. "
+    "If the prompt names only the child and one animal — draw ONLY those two."
 )
 
 # Used for Stability AI and Pollinations (DALL-E 3 ignores negative_prompt parameter)

@@ -158,7 +158,7 @@ def generate_story(db: Session, payload: dict) -> Story:
                 photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
                 char_desc=text_payload.get('char_desc', ''),
                 scene_prompts=text_payload.get('image_prompts', []),
-                count=4,
+                count=5,
                 image_style=image_style,
             )
             if photo_hash:
