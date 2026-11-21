@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,6 +58,11 @@ class Story(Base):
 
 class Order(Base):
     __tablename__ = 'orders'
+    # Also migrate existing PostgreSQL tables; Base.metadata.create_all does NOT add
+    # constraints to already-created tables.
+    __table_args__ = (
+        UniqueConstraint('provider', 'provider_payment_id', name='uq_order_provider_payment'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)

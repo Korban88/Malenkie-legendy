@@ -37,11 +37,15 @@ class Settings(BaseSettings):
     stories_dir: str = str(BASE_DIR / 'backend' / 'storage' / 'stories')
     images_dir: str = str(BASE_DIR / 'backend' / 'storage' / 'images')
 
+    # Private bot-to-backend secret (minimum 32 random characters; not a Telegram token).
+    backend_internal_token: str = ''
+
     keep_uploaded_photo: bool = False
 
     # TESTING: set to True to always generate episode 1 (disables series continuation).
     # Switch to False when ready for production.
-    force_episode_one: bool = True
+    # Continuations are the default. For test-only first-episode replay set via .env.
+    force_episode_one: bool = False
 
     @property
     def database_url(self) -> str:

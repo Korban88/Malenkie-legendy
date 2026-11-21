@@ -30,6 +30,8 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         child = db.get(Child, payload['child_id'])
         if not child:
             raise ValueError('Child not found')
+        if child.user_id != user_id:
+            raise ValueError('Child does not belong to this user')
         for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
             val = payload.get(field)
             if val:
@@ -77,23 +79,54 @@ def generate_story(db: Session, payload: dict) -> Story:
     user = get_or_create_user(db, payload['external_user_id'], payload.get('channel', 'telegram'))
     child = get_or_create_child(db, payload, user.id)
 
-    # Если оплата через Telegram Stars — создаём Order
+    # Every production generation requires a paid order. Telegram payment IDs
+    # are trusted only through the authenticated internal bot-to-backend channel.
     order_id = payload.get('order_id')
-    if not order_id and payload.get('telegram_payment_charge_id'):
-        photo_enabled = payload.get('photo_enabled', False)
-        order = Order(
-            user_id=user.id,
-            child_id=child.id,
-            tariff='story_with_photo' if photo_enabled else 'story',
-            amount_rub=200 if photo_enabled else 150,  # сумма в XTR
-            provider='telegram_stars',
-            status='paid',
-            provider_payment_id=payload['telegram_payment_charge_id'],
-            meta={'currency': 'XTR'},
+    charge_id = payload.get('telegram_payment_charge_id')
+    if not order_id and not charge_id:
+        raise ValueError('Paid order is required before story generation')
+    if not order_id and charge_id:
+        existing_payment = db.scalar(
+            select(Order).where(
+                Order.provider == 'telegram_stars',
+                Order.provider_payment_id == charge_id,
+            )
         )
-        db.add(order)
-        db.flush()
-        order_id = order.id
+        if existing_payment is not None:
+            if existing_payment.user_id != user.id or existing_payment.child_id != child.id:
+                raise ValueError('Payment belongs to another user or child')
+            if existing_payment.status != 'paid':
+                raise ValueError('Payment is not marked as paid')
+            order_id = existing_payment.id
+        else:
+            photo_enabled = payload.get('photo_enabled', False)
+            order = Order(
+                user_id=user.id,
+                child_id=child.id,
+                tariff='story_with_photo' if photo_enabled else 'story',
+                amount_rub=200 if photo_enabled else 150,  # amount is XTR, not RUB: schema migration required
+                provider='telegram_stars',
+                status='paid',
+                provider_payment_id=charge_id,
+                meta={'currency': 'XTR'},
+            )
+            db.add(order)
+            db.flush()
+            order_id = order.id
+
+    paid_order = db.get(Order, order_id)
+    if not paid_order or paid_order.status != 'paid':
+        raise ValueError('Order must be paid before story generation')
+    if paid_order.user_id != user.id or paid_order.child_id != child.id:
+        raise ValueError('Order does not belong to this user and child')
+    if charge_id and paid_order.provider_payment_id != charge_id:
+        raise ValueError('Payment ID does not match order')
+
+    # A paid order is an idempotency key: never create a second story for it.
+    # A failed existing story needs a separate explicit retry/recovery flow.
+    story_for_order = db.scalar(select(Story).where(Story.order_id == order_id))
+    if story_for_order is not None:
+        return story_for_order
 
     max_episode = db.scalar(select(func.max(Story.episode_number)).where(Story.child_id == child.id)) or 0
     if get_settings().force_episode_one:
@@ -103,7 +136,8 @@ def generate_story(db: Session, payload: dict) -> Story:
 
     existing = db.scalar(select(Story).where(Story.child_id == child.id, Story.episode_number == episode_number))
     if existing:
-        return existing
+        # Never use another paid order's story as the result of a new payment.
+        raise ValueError('Requested episode already exists; resolve continuation or refund this order')
 
     latest_story = db.scalar(
         select(Story)

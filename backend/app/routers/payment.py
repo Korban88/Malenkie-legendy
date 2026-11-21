@@ -3,9 +3,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..internal_auth import require_internal_token
 from ..services.payment_service import confirm_order, create_order
 
-router = APIRouter(prefix='/api/payments', tags=['payments'])
+router = APIRouter(prefix='/api/payments', tags=['payments'], dependencies=[Depends(require_internal_token)])
 
 
 class OrderCreateRequest(BaseModel):
@@ -44,8 +45,6 @@ def create_order_endpoint(payload: OrderCreateRequest, db: Session = Depends(get
 
 @router.post('/orders/{order_id}/confirm')
 def confirm_order_endpoint(order_id: int, payload: OrderConfirmRequest, db: Session = Depends(get_db)):
-    try:
-        order = confirm_order(db, order_id, payload.provider_payment_id)
-        return {'order_id': order.id, 'status': order.status}
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # No payment-provider signature is verified here. This legacy endpoint
+    # must not mark an order as paid until a verified webhook is implemented.
+    raise HTTPException(status_code=503, detail="Manual payment confirmation is disabled")
