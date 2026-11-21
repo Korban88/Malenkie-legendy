@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..internal_auth import require_internal_token
 from ..schemas import StoryGenerateRequest, StoryGenerateResponse
 from ..services.story_service import generate_story, list_child_stories
 
-router = APIRouter(prefix='/api', tags=['story'])
+router = APIRouter(prefix='/api', tags=['story'], dependencies=[Depends(require_internal_token)])
 
 
 def to_response(story) -> StoryGenerateResponse:
