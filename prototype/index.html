@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Маленькие легенды — работающий демонстрационный прототип</title>
+<style>
+:root{--bg:#f8f5ee;--paper:#fffef9;--ink:#2c3833;--muted:#6c796f;--green:#416652;--line:#e6e5da}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px/1.52 Arial,sans-serif;color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a67d3d;outline-offset:3px}
+header{background:#fffdf7;border-bottom:1px solid var(--line)}.top,.wrap,footer{max-width:1130px;padding:0 23px;margin:auto}.top{min-height:74px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;gap:13px;align-items:center}.logo{background:var(--green);color:white;border-radius:12px;padding:8px 14px;font:28px Georgia,serif}.brand-name{font:bold 17px Georgia,serif}.sub{color:var(--muted);font-size:12px}.status{font-size:12px;color:#607067;border:1px solid var(--line);padding:7px 12px;border-radius:18px}
+.wrap{display:grid;grid-template-columns:1fr 1.06fr;gap:55px;padding-top:54px;padding-bottom:58px}.tag{color:#77917f;letter-spacing:.12em;text-transform:uppercase;font-size:12px;font-weight:bold}h1{font:normal 53px/1.09 Georgia,serif;letter-spacing:-.045em;margin:18px 0 22px}h2{font:normal 29px/1.18 Georgia,serif;margin:26px 0 9px}.lead{font-size:17px;line-height:1.6;color:#596c61}.bullets{margin:23px 0 22px;padding:0;list-style:none;color:#52655a}.bullets li{margin:10px 0}.bullets li:before{content:"•";color:#ad8345;margin-right:10px}.illustration{max-width:450px;height:360px;border-radius:25px;position:relative;overflow:hidden;margin-top:25px;background:linear-gradient(175deg,#c7dfcf 0%,#ebdab5 75%);box-shadow:0 16px 40px #283c3018}.sun{position:absolute;top:55px;right:74px;width:94px;height:94px;background:#fff1cb;border-radius:100%}.hill1,.hill2{position:absolute;width:140%;height:200px;bottom:-75px;left:-10%;border-radius:48% 52% 0 0;background:#7d9c85;transform:rotate(-8deg)}.hill2{background:#476c5b;bottom:-120px;left:10%;transform:rotate(8deg)}.tower{position:absolute;width:69px;height:182px;bottom:66px;left:48%;background:#f6e6c9;border:5px solid #56766b;clip-path:polygon(18% 0,82% 0,100% 100%,0 100%)}.light{position:absolute;width:96px;height:18px;background:#56766b;bottom:237px;left:45%}.beacon{position:absolute;width:53px;height:33px;background:#f6c778;bottom:251px;left:49%;border:5px solid #56766b}.book-tag{position:absolute;bottom:15px;left:16px;color:#43594f;background:#fffdf4df;border-radius:20px;padding:7px 11px;font-size:12px}
+.panel{background:var(--paper);border:1px solid #e8e9de;border-radius:24px;padding:30px;box-shadow:0 20px 50px #3346370a;min-height:520px}.meta{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;font-weight:bold}.track{height:5px;border-radius:8px;background:#e8ebe2;margin-top:11px;overflow:hidden}.bar{height:100%;width:16.666%;background:#568069;transition:width .2s}.hint{color:var(--muted);font-size:14px;margin:0 0 24px}.field{margin-bottom:20px}.field label{display:block;margin-bottom:8px;font-size:13px;font-weight:bold}.field input[type=text],select{width:100%;border:1px solid #d3dcd4;background:#fff;border-radius:11px;padding:12px 14px;color:var(--ink)}.age{display:flex;align-items:center;gap:16px}.age input{flex:1;accent-color:#52735d}.age output{font:24px Georgia,serif;min-width:30px}.choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}.choice{border:1px solid #d9e0d8;background:#fff;border-radius:12px;padding:13px;text-align:left;min-height:54px;color:#3d5246}.choice.selected{border-color:#50755c;background:#eaf3e8;box-shadow:inset 0 0 0 1px #50755c;font-weight:bold}.choice:hover{background:#f2f7ef}.selectors{display:grid;grid-template-columns:1fr 1fr;gap:13px}.action-row{display:flex;justify-content:space-between;gap:13px;align-items:center;border-top:1px solid var(--line);padding-top:21px;margin-top:27px}.btn{border:1px solid #b4c8b9;border-radius:11px;padding:12px 20px;color:var(--green);font-weight:bold;background:transparent;min-height:46px}.btn.primary{background:var(--green);border-color:var(--green);color:#fff}.btn:disabled{opacity:.42;cursor:not-allowed}.err{color:#b33d38;font-size:13px;min-height:18px;margin-top:12px}.notice{border-radius:12px;background:#f2f4eb;border:1px solid #e5e9df;padding:14px;font-size:13px;color:#596b5e}.details{display:grid;gap:9px}.detail{display:flex;justify-content:space-between;gap:15px;padding:9px 0;border-bottom:1px solid var(--line)}.detail span:first-child{color:var(--muted)}.hidden{display:none!important}
+.page{border:1px solid var(--line);background:#fffdfa;min-height:355px;border-radius:13px;padding:24px}.bookcover{height:315px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:white;border-radius:12px;background:linear-gradient(140deg,#3a5c4c,#799c77 65%,#d8aa71)}.moon{width:80px;height:80px;border-radius:50%;background:#efdbad;box-shadow:0 0 0 15px #ffecbb25;margin:20px}.bookcover h3{font:normal 39px/1.07 Georgia,serif;margin:10px 15px}.bookcover small{letter-spacing:.12em;text-transform:uppercase}.page h3{font:normal 28px/1.2 Georgia,serif;margin:20px 0}.page p{font:17px/1.7 Georgia,serif}.pagenav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:16px 0}.small{font-size:12px;color:var(--muted)}footer{border-top:1px solid var(--line);padding-top:25px;padding-bottom:30px;color:var(--muted);font-size:12px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr;gap:20px;padding-top:30px}.intro{display:grid;grid-template-columns:1fr 220px;gap:18px}.illustration{margin:0;height:230px}.intro-copy{grid-column:1}.panel{min-height:auto}h1{font-size:43px}.bullets{display:none}}
+@media(max-width:650px){.top,.wrap,footer{padding-left:16px;padding-right:16px}.status{max-width:122px;text-align:center;line-height:1.25}.intro{display:block}.illustration{display:none}h1{font-size:37px}.lead{font-size:15px}.panel{padding:20px 17px;border-radius:18px}h2{font-size:27px}.selectors{grid-template-columns:1fr}.choices{gap:8px}.choice{font-size:13px;padding:12px}.page{padding:15px}.page p{font-size:15px}}
+</style>
+</head>
+<body>
+<header><div class="top"><div class="brand"><div class="logo" aria-hidden="true">Л</div><div><div class="brand-name">Маленькие легенды</div><div class="sub">История, в которой главный герой — ваш ребёнок</div></div></div><span class="status">Тестовый прототип. Без оплаты</span></div></header>
+<main class="wrap">
+<section class="intro"><div class="intro-copy"><div class="tag">Каждая история особенная</div><h1>У каждого ребёнка должна быть своя легенда.</h1><p class="lead">Выберите жанр, мир приключений и любимые детали. Посмотрите, какой может получиться книга, которую хочется читать вместе.</p><ul class="bullets"><li>Анкета по мотивам оригинального Telegram-бота</li><li>Выбор характера сказки и оформления</li><li>Книжный предпросмотр без реальных платежей</li></ul></div><div class="illustration" role="img" aria-label="Демонстрационный рисунок сказочного маяка среди зелёных холмов"><div class="sun"></div><div class="hill1"></div><div class="hill2"></div><div class="tower"></div><div class="light"></div><div class="beacon"></div><span class="book-tag">Демонстрационная иллюстрация</span></div></section>
+<section class="panel">
+<div id="wizard"><div class="meta"><span id="metaTitle"></span><span id="metaCount"></span></div><div class="track"><div class="bar" id="bar"></div></div><div id="content"></div><div class="err" id="err" role="alert"></div><div class="action-row"><button type="button" class="btn" id="back">Назад</button><button type="button" class="btn primary" id="next">Продолжить</button></div></div>
+<div id="preview" class="hidden"><div class="meta"><span>Демонстрационная книга</span><span>Предпросмотр</span></div><h2 id="bookTitle"></h2><p class="hint">Текст по шаблону, не настоящая генерация ИИ. Вёрстка демонстрационная.</p><div class="page" id="page"></div><div class="pagenav"><span class="small" id="pages"></span><div><button type="button" class="btn" id="previousPage">Назад</button> <button type="button" class="btn primary" id="nextPage">Далее</button></div></div><div class="action-row"><button type="button" class="btn" id="edit">Изменить анкету</button><button type="button" class="btn primary" id="order">Как заказать</button></div><p class="small" id="orderInfo">Реальные платежи, загрузка фотографий и сохранение личных данных отключены.</p></div>
+</section>
+</main><footer>Маленькие легенды · тестовый продуктовый сценарий · никаких внешних запросов · личные данные остаются в памяти открытой страницы</footer>
+<script>
+(function(){
+"use strict";
+var qs=function(id){return document.getElementById(id)};
+var step=0, p=0, book=[];
+var d={name:"",age:7,gender:"",purpose:"",genre:"",style:"",animal:"кот",color:"синий",hobby:"рисование",place:"волшебный лес"};
+var groups={
+gender:[["girl","Девочка"],["boy","Мальчик"],["other","Не указывать"]],
+purpose:[["bedtime","Сказка на ночь"],["brave","Стать смелее"],["fear","Победить страх"],["friendship","Дружба"],["creativity","Фантазия"],["confidence","Поверить в себя"]],
+genre:[["magic","Волшебная"],["adventure","Приключение"],["nature","Природа"],["space","Космос"],["tender","Нежная история"],["epic","Большое путешествие"]],
+style:[["watercolor","Акварель"],["storybook","Книжная"],["cartoon","Мультфильм"],["pencil","Карандаш"],["paper","Аппликация"],["paint","Живопись"]]};
+var titles=["Наш главный герой","Для чего эта сказка?","Какой жанр выбрать?","Какие иллюстрации?","Любимые детали","Последний шаг"];
+function esc(v){return String(v).replace(/[&<>"']/g,function(x){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[x]})}
+function label(k){var a=groups[k].filter(function(x){return x[0]===d[k]})[0];return a?a[1]:"—"}
+function options(k){return '<div class="choices">'+groups[k].map(function(x){return '<button type="button" class="choice'+(d[k]===x[0]?' selected':'')+'" data-key="'+k+'" data-value="'+x[0]+'" aria-pressed="'+(d[k]===x[0])+'">'+x[1]+'</button>'}).join('')+'</div>'}
+function selector(k,title,values){return '<div class="field"><label for="'+k+'">'+title+'</label><select id="'+k+'" data-select="'+k+'">'+values.map(function(x){return '<option'+(d[k]===x?' selected':'')+'>'+x+'</option>'}).join('')+'</select></div>'}
+function info(k,v){return '<div class="detail"><span>'+esc(k)+'</span><strong>'+esc(v)+'</strong></div>'}
+function render(){
+qs("wizard").classList.remove("hidden");qs("preview").classList.add("hidden");qs("metaTitle").textContent=titles[step];qs("metaCount").textContent=(step+1)+" / 6";qs("bar").style.width=((step+1)*100/6)+"%";qs("err").textContent="";
+var body="";
+if(step===0)body='<h2>Как зовут ребёнка?</h2><p class="hint">Начнём с имени и возраста.</p><div class="field"><label for="childName">Имя героя</label><input id="childName" type="text" maxlength="40" autocomplete="off" placeholder="Например, Мила"></div><div class="field"><label for="age">Возраст</label><div class="age"><input id="age" type="range" min="3" max="11" value="'+d.age+'"><output id="ageValue">'+d.age+'</output></div></div><div class="field"><label>Пол героя</label>'+options("gender")+'</div>';
+if(step===1)body='<h2>Что важно в этой истории?</h2><p class="hint">Сказка подберёт настроение и идею под ваш запрос.</p>'+options("purpose");
+if(step===2)body='<h2>Куда отправиться?</h2><p class="hint">Выберите мир будущего приключения.</p>'+options("genre");
+if(step===3)body='<h2>Как должна выглядеть книга?</h2><p class="hint">Финальные рисунки после восстановления оригинального движка.</p>'+options("style");
+if(step===4)body='<h2>Пара любимых вещей</h2><p class="hint">Так сказка станет ближе ребёнку.</p><div class="selectors">'+selector("animal","Животное",["кот","собака","лиса","сова","заяц","дракон"])+selector("color","Цвет",["синий","зелёный","жёлтый","красный","фиолетовый","оранжевый"])+selector("hobby","Увлечение",["рисование","музыка","книги","спорт","наука","готовка"])+selector("place","Место",["волшебный лес","море","горы","замок","космос","волшебный город"])+'</div>';
+if(step===5)body='<h2>Книга почти готова</h2><p class="hint">Проверьте выбор перед просмотром.</p><div class="details">'+info("Имя и возраст",d.name+", "+d.age+" лет")+info("Цель",label("purpose"))+info("Жанр",label("genre"))+info("Рисунки",label("style"))+info("Место",d.place)+'</div><p class="notice">Фотография не запрашивается. В дальнейшем — только с отдельным согласием и защитой детских данных. Здесь нет оплаты и отправки на сервер.</p>';
+qs("content").innerHTML=body;qs("back").disabled=step===0;qs("next").textContent=step===5?"Посмотреть книгу":"Продолжить";
+if(step===0){qs("childName").value=d.name;qs("childName").addEventListener("input",function(e){d.name=e.target.value});qs("age").addEventListener("input",function(e){d.age=+e.target.value;qs("ageValue").textContent=d.age})}
+Array.prototype.forEach.call(document.querySelectorAll("[data-key]"),function(b){b.addEventListener("click",function(){d[b.dataset.key]=b.dataset.value;render()})});
+Array.prototype.forEach.call(document.querySelectorAll("[data-select]"),function(s){s.addEventListener("change",function(){d[s.dataset.select]=s.value})});
+}
+function valid(){if(step===0){if(d.name.trim().length<2){qs("err").textContent="Введите имя ребёнка, минимум два символа.";return false}if(!d.gender){qs("err").textContent="Выберите пол или «Не указывать».";return false}}if(step===1&&!d.purpose||step===2&&!d.genre||step===3&&!d.style){qs("err").textContent="Выберите один из вариантов.";return false}return true}
+function story(){
+var n=d.name.trim();
+var found={magic:"сияющую звезду",adventure:"старинную карту",nature:"необычное пёрышко",space:"таинственный сигнал",tender:"крошечный фонарик",epic:"послание далёкого маяка"}[d.genre];
+var moral={bedtime:"Самые добрые приключения заканчиваются дома, где тебя ждут.",brave:"Смелость начинается с маленького поступка.",fear:"Когда есть кому рассказать о страхе, справиться с ним легче.",friendship:"Хороший друг не бросит тебя одного.",creativity:"Неожиданная идея может изменить целый день.",confidence:"Стоит попробовать — и многое становится возможным."}[d.purpose];
+return [
+{cover:true,title:"История для "+n},
+{title:"Глава первая. Необычная находка",body:"В тот день "+n+" отправился на прогулку в "+d.place+". Рядом шёл верный друг — "+d.animal+". Под деревом обнаружилась странная находка: "+found+". Что она означает, пока никто не знал."},
+{title:"Глава вторая. Важное решение",body:"На дороге появился слабый огонёк. Друзья остановились и внимательно огляделись. Впереди начинался сложный путь, поэтому они позвали взрослого проводника. Вместе было безопаснее. Оказалось, что старый путевой фонарь давно нуждался в ремонте."},
+{title:"Глава третья. Добрый свет",body:"Взрослый помог закрепить новое стекло, а друзья очистили фонарь от пыли. Вскоре тёплый свет снова засиял над тропой. "+n+" улыбнулся: даже небольшой совместный поступок может оказаться очень важным."},
+{title:"До следующей легенды",body:moral+" А вдали уже загорался новый огонёк — начало следующей истории."}
+]}
+function drawPage(){
+var x=book[p],node=qs("page");node.innerHTML="";
+if(x.cover){var wrap=document.createElement("div");wrap.className="bookcover";var sm=document.createElement("small");sm.textContent="Маленькие легенды";var moon=document.createElement("div");moon.className="moon";var h=document.createElement("h3");h.textContent=x.title;var sub=document.createElement("span");sub.textContent="Демонстрационная книга";wrap.append(sm,moon,h,sub);node.appendChild(wrap)}
+else{var h=document.createElement("h3"),b=document.createElement("p");h.textContent=x.title;b.textContent=x.body;node.append(h,b)}
+qs("pages").textContent="Страница "+(p+1)+" из "+book.length;qs("previousPage").disabled=p===0;qs("nextPage").disabled=p===book.length-1}
+qs("back").addEventListener("click",function(){if(step){step--;render()}});
+qs("next").addEventListener("click",function(){if(!valid())return;if(step<5){step++;render()}else{book=story();p=0;qs("wizard").classList.add("hidden");qs("preview").classList.remove("hidden");qs("bookTitle").textContent="Сказка для "+d.name;drawPage()}});
+qs("previousPage").addEventListener("click",function(){if(p){p--;drawPage()}});
+qs("nextPage").addEventListener("click",function(){if(p<book.length-1){p++;drawPage()}});
+qs("edit").addEventListener("click",function(){step=0;render()});
+qs("order").addEventListener("click",function(){qs("orderInfo").textContent="В будущем: родитель подтверждает цену и условия, оплачивает через проверенный сервис и получает прошедшую редактуру PDF-книгу в личную библиотеку. В прототипе покупки нет."});
+render();
+})();
+</script>
+</body>
+</html>
