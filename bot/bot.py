@@ -1,6 +1,7 @@
 import base64
 import os
 import asyncio
+import uuid
 from pathlib import Path
 
 import httpx
@@ -22,6 +23,7 @@ from aiogram.types import (
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8010")
+BACKEND_INTERNAL_TOKEN = os.getenv("BACKEND_INTERNAL_TOKEN", "")
 
 STORY_PRICE_XTR = 150           # Telegram Stars, без фото
 STORY_WITH_PHOTO_PRICE_XTR = 200  # Telegram Stars, с фото
@@ -529,8 +531,8 @@ async def cb_photo_choice(call: CallbackQuery, state: FSMContext):
         await state.set_state(Form.photo_upload)
     else:
         await state.update_data(photo_base64=None, photo_enabled=False)
-        await call.message.answer("🪄 Создаю сказку — это займёт 3–5 минут...")
-        await _generate(call.message, state)
+        await call.message.answer("Анкета готова. Перейдём к оплате сказки.")
+        await _request_payment(call.message, state)
     await call.answer()
 
 
@@ -546,8 +548,8 @@ async def form_photo(message: Message, state: FSMContext):
     photo_bytes = downloaded.read()
     photo_b64 = base64.b64encode(photo_bytes).decode()
     await state.update_data(photo_base64=photo_b64, photo_enabled=True, photo_consent=True)
-    await message.answer("✅ Фото получено! Создаю сказку — это займёт 3–5 минут...")
-    await _generate(message, state)
+    await message.answer("Фото получено. Перейдём к оплате сказки.")
+    await _request_payment(message, state)
 
 
 @dp.message(Form.photo_upload)
@@ -585,24 +587,52 @@ async def _request_payment(trigger_message: Message, state: FSMContext):
     price_xtr = STORY_WITH_PHOTO_PRICE_XTR if photo_enabled else STORY_PRICE_XTR
     tariff_label = "с иллюстрацией по фото" if photo_enabled else "с иллюстрациями"
 
+    invoice_payload = f"story_{trigger_message.chat.id}_{uuid.uuid4().hex}"
+    await state.update_data(
+        invoice_payload=invoice_payload,
+        expected_price_xtr=price_xtr,
+        payer_id=trigger_message.chat.id,
+    )
     await state.set_state(Form.awaiting_payment)
     await trigger_message.answer_invoice(
         title=f"✨ Сказка для {child_name}",
         description=f"Персональная сказка {tariff_label} — 1 эпизод",
-        payload=f"story_{trigger_message.chat.id}",
+        payload=invoice_payload,
         currency="XTR",
         prices=[LabeledPrice(label="Сказка", amount=price_xtr)],
     )
 
 
 @dp.pre_checkout_query()
-async def pre_checkout(query: PreCheckoutQuery):
-    await query.answer(ok=True)
+async def pre_checkout(query: PreCheckoutQuery, state: FSMContext):
+    data = await state.get_data()
+    valid = (
+        await state.get_state() == Form.awaiting_payment.state
+        and data.get("invoice_payload") == query.invoice_payload
+        and data.get("expected_price_xtr") == query.total_amount
+        and data.get("payer_id") == query.from_user.id
+        and query.currency == "XTR"
+    )
+    await query.answer(
+        ok=valid,
+        error_message=None if valid else "Счёт устарел. Начните заказ заново.",
+    )
 
 
 @dp.message(F.successful_payment)
 async def successful_payment_handler(message: Message, state: FSMContext):
-    charge_id = message.successful_payment.telegram_payment_charge_id
+    paid = message.successful_payment
+    data = await state.get_data()
+    if not (
+        await state.get_state() == Form.awaiting_payment.state
+        and data.get("invoice_payload") == paid.invoice_payload
+        and data.get("expected_price_xtr") == paid.total_amount
+        and paid.currency == "XTR"
+        and data.get("payer_id") == message.from_user.id
+    ):
+        await message.answer("Платёж получен, но заказ требует проверки. Напишите в поддержку; повторно платить не нужно.")
+        return
+    charge_id = paid.telegram_payment_charge_id
     await state.update_data(telegram_payment_charge_id=charge_id)
     await message.answer("✅ Оплата прошла! Создаю сказку — это займёт 3–5 минут...")
     await _generate(message, state)
@@ -621,7 +651,12 @@ async def awaiting_payment_fallback(message: Message):
 
 async def _generate(trigger_message: Message, state: FSMContext):
     data = await state.get_data()
-    await state.clear()
+    if not data.get("telegram_payment_charge_id"):
+        await trigger_message.answer("Для этого заказа нет подтверждённой оплаты.")
+        return
+    if not BACKEND_INTERNAL_TOKEN or len(BACKEND_INTERNAL_TOKEN) < 32:
+        await trigger_message.answer("Сервис временно не готов к выдаче книги. Платёж сохранён; не оплачивайте повторно.")
+        return
 
     child_name      = data.get("child_name", "Герой")
     age             = data.get("age", 7)
@@ -683,7 +718,7 @@ async def _generate(trigger_message: Message, state: FSMContext):
 
     try:
         async with httpx.AsyncClient(timeout=480) as client:
-            resp = await client.post(f"{BACKEND_URL}/api/story/generate", json=payload)
+            resp = await client.post(f"{BACKEND_URL}/api/story/generate", json=payload, headers={"X-Legend-Internal-Key": BACKEND_INTERNAL_TOKEN})
             resp.raise_for_status()
             result = resp.json()
     except httpx.ReadTimeout:
@@ -758,6 +793,7 @@ async def _generate(trigger_message: Message, state: FSMContext):
         "📖 Сказка готова!" + (" Скачай PDF для чтения вслух!" if pdf_url else ""),
         reply_markup=kb_after_story(pdf_url, episode, child_name),
     )
+    await state.clear()  # Clear only after delivery; failed jobs retain paid state for recovery.
 
 
 # ---------------------------------------------------------------------------
