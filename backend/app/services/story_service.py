@@ -136,7 +136,8 @@ def generate_story(db: Session, payload: dict) -> Story:
 
     existing = db.scalar(select(Story).where(Story.child_id == child.id, Story.episode_number == episode_number))
     if existing:
-        return existing
+        # Never use another paid order's story as the result of a new payment.
+        raise ValueError('Requested episode already exists; resolve continuation or refund this order')
 
     latest_story = db.scalar(
         select(Story)
