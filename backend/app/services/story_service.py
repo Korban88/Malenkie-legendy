@@ -77,9 +77,25 @@ def generate_story(db: Session, payload: dict) -> Story:
     user = get_or_create_user(db, payload['external_user_id'], payload.get('channel', 'telegram'))
     child = get_or_create_child(db, payload, user.id)
 
-    # Если оплата через Telegram Stars — создаём Order
+    # Every production generation requires a paid order. Telegram payment IDs
+    # are trusted only through the authenticated internal bot-to-backend channel.
     order_id = payload.get('order_id')
-    if not order_id and payload.get('telegram_payment_charge_id'):
+    charge_id = payload.get('telegram_payment_charge_id')
+    if not order_id and not charge_id:
+        raise ValueError('Paid order is required before story generation')
+    if not order_id and charge_id:
+        existing_payment = db.scalar(
+            select(Order).where(
+                Order.provider == 'telegram_stars',
+                Order.provider_payment_id == charge_id,
+            )
+        )
+        if existing_payment is not None:
+            if existing_payment.user_id != user.id or existing_payment.child_id != child.id:
+                raise ValueError('Payment belongs to another user or child')
+            if existing_payment.status != 'paid':
+                raise ValueError('Payment is not marked as paid')
+            order_id = existing_payment.id
         photo_enabled = payload.get('photo_enabled', False)
         order = Order(
             user_id=user.id,
@@ -94,6 +110,14 @@ def generate_story(db: Session, payload: dict) -> Story:
         db.add(order)
         db.flush()
         order_id = order.id
+
+    paid_order = db.get(Order, order_id)
+    if not paid_order or paid_order.status != 'paid':
+        raise ValueError('Order must be paid before story generation')
+    if paid_order.user_id != user.id or paid_order.child_id != child.id:
+        raise ValueError('Order does not belong to this user and child')
+    if charge_id and paid_order.provider_payment_id != charge_id:
+        raise ValueError('Payment ID does not match order')
 
     max_episode = db.scalar(select(func.max(Story.episode_number)).where(Story.child_id == child.id)) or 0
     if get_settings().force_episode_one:
