@@ -44,7 +44,8 @@ class Settings(BaseSettings):
 
     # TESTING: set to True to always generate episode 1 (disables series continuation).
     # Switch to False when ready for production.
-    force_episode_one: bool = True
+    # Continuations are the default. For test-only first-episode replay set via .env.
+    force_episode_one: bool = False
 
     @property
     def database_url(self) -> str:
