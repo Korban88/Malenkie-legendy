@@ -30,6 +30,8 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
         child = db.get(Child, payload['child_id'])
         if not child:
             raise ValueError('Child not found')
+        if child.user_id != user_id:
+            raise ValueError('Child does not belong to this user')
         for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
             val = payload.get(field)
             if val:
@@ -96,20 +98,21 @@ def generate_story(db: Session, payload: dict) -> Story:
             if existing_payment.status != 'paid':
                 raise ValueError('Payment is not marked as paid')
             order_id = existing_payment.id
-        photo_enabled = payload.get('photo_enabled', False)
-        order = Order(
-            user_id=user.id,
-            child_id=child.id,
-            tariff='story_with_photo' if photo_enabled else 'story',
-            amount_rub=200 if photo_enabled else 150,  # сумма в XTR
-            provider='telegram_stars',
-            status='paid',
-            provider_payment_id=payload['telegram_payment_charge_id'],
-            meta={'currency': 'XTR'},
-        )
-        db.add(order)
-        db.flush()
-        order_id = order.id
+        else:
+            photo_enabled = payload.get('photo_enabled', False)
+            order = Order(
+                user_id=user.id,
+                child_id=child.id,
+                tariff='story_with_photo' if photo_enabled else 'story',
+                amount_rub=200 if photo_enabled else 150,  # amount is XTR, not RUB: schema migration required
+                provider='telegram_stars',
+                status='paid',
+                provider_payment_id=charge_id,
+                meta={'currency': 'XTR'},
+            )
+            db.add(order)
+            db.flush()
+            order_id = order.id
 
     paid_order = db.get(Order, order_id)
     if not paid_order or paid_order.status != 'paid':
@@ -118,6 +121,12 @@ def generate_story(db: Session, payload: dict) -> Story:
         raise ValueError('Order does not belong to this user and child')
     if charge_id and paid_order.provider_payment_id != charge_id:
         raise ValueError('Payment ID does not match order')
+
+    # A paid order is an idempotency key: never create a second story for it.
+    # A failed existing story needs a separate explicit retry/recovery flow.
+    story_for_order = db.scalar(select(Story).where(Story.order_id == order_id))
+    if story_for_order is not None:
+        return story_for_order
 
     max_episode = db.scalar(select(func.max(Story.episode_number)).where(Story.child_id == child.id)) or 0
     if get_settings().force_episode_one:
