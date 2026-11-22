@@ -2,7 +2,9 @@ import base64
 import os
 import asyncio
 import uuid
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from aiogram import Bot, Dispatcher, F
@@ -249,9 +251,9 @@ def kb_photo_choice() -> InlineKeyboardMarkup:
 
 
 def kb_after_story(pdf_url: str | None, episode: int, child_name: str) -> InlineKeyboardMarkup:
+    # Never expose private PDF via a permanently accessible URL. The purchased
+    # document is sent as a Telegram attachment below.
     buttons = []
-    if pdf_url:
-        buttons.append([InlineKeyboardButton(text="📖 Открыть PDF", url=pdf_url)])
     next_label = f"✨ Продолжение ({child_name}, эп. {episode + 1})" if episode > 1 else "✨ Ещё сказку"
     buttons.append([InlineKeyboardButton(text=next_label, callback_data="start_story")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -561,15 +563,67 @@ async def form_photo_wrong(message: Message, state: FSMContext):
 # Вспомогательная: скачать и отправить картинку
 # ---------------------------------------------------------------------------
 
+_PRIVATE_MEDIA_NAME = re.compile(r"^[a-f0-9]{32}\.(?:png|jpg|jpeg|webp|pdf)$", re.I)
+
+
+def _private_media_filename(locator: str, kind: str) -> str:
+    """A story response is only a locator. Never fetch an arbitrary external URL."""
+    if kind not in ("images", "stories"):
+        raise ValueError("Unknown media kind")
+    parsed = urlsplit(locator)
+    expected = f"/files/{kind}/"
+    if parsed.path.count("/") != 3 or not parsed.path.startswith(expected):
+        raise ValueError("Unexpected media locator")
+    filename = parsed.path[len(expected):]
+    if not _PRIVATE_MEDIA_NAME.fullmatch(filename):
+        raise ValueError("Invalid private media filename")
+    if kind == "stories" and not filename.lower().endswith(".pdf"):
+        raise ValueError("Expected PDF")
+    if kind == "images" and filename.lower().endswith(".pdf"):
+        raise ValueError("Expected image")
+    return filename
+
+
+async def _download_private_media(locator: str, kind: str) -> tuple[str, bytes]:
+    if not BACKEND_INTERNAL_TOKEN or len(BACKEND_INTERNAL_TOKEN) < 32:
+        raise RuntimeError("Private media access is not configured")
+    filename = _private_media_filename(locator, kind)
+    endpoint = f"{BACKEND_URL.rstrip('/')}/api/internal/files/{kind}/{filename}"
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.get(endpoint, headers={
+            "X-Legend-Internal-Key": BACKEND_INTERNAL_TOKEN,
+        })
+        response.raise_for_status()
+    content = response.content
+    if not content or len(content) > 30 * 1024 * 1024:
+        raise ValueError("Unexpected media size")
+    if kind == "stories" and not content.startswith(b"%PDF-"):
+        raise ValueError("Response is not a PDF")
+    if kind == "images" and not (content.startswith(b"\x89PNG\r\n\x1a\n") or
+                                  content.startswith(b"\xff\xd8\xff") or
+                                  content.startswith(b"RIFF") and content[8:12] == b"WEBP"):
+        raise ValueError("Response is not a supported image")
+    return filename, content
+
+
 async def _send_image(message: Message, img_url: str, caption: str = '') -> bool:
     try:
-        async with httpx.AsyncClient(timeout=30) as img_client:
-            img_resp = await img_client.get(img_url)
-            img_resp.raise_for_status()
-        filename = img_url.split("/")[-1]
+        filename, content = await _download_private_media(img_url, "images")
         await message.answer_photo(
-            photo=BufferedInputFile(img_resp.content, filename=filename),
+            photo=BufferedInputFile(content, filename=filename),
             caption=caption,
+        )
+        return True
+    except Exception:
+        return False
+
+
+async def _send_pdf(message: Message, pdf_url: str, episode: int) -> bool:
+    try:
+        _, content = await _download_private_media(pdf_url, "stories")
+        await message.answer_document(
+            document=BufferedInputFile(content, filename=f"legendkids-episode-{episode}.pdf"),
+            caption="Ваша персональная сказка в PDF",
         )
         return True
     except Exception:
@@ -788,12 +842,20 @@ async def _generate(trigger_message: Message, state: FSMContext):
     if images_urls[5]:
         await _send_image(trigger_message, images_urls[5], caption="🏆 Финал")
 
-    # ── PDF и кнопки ──────────────────────────────────────────────────────
+    # ── PDF и кнопки: private authenticated delivery ────────────────────
+    if not pdf_url or not await _send_pdf(trigger_message, pdf_url, episode):
+        # The customer has already paid. Do not clear the paid state or
+        # invite another payment. Durable recovery across restarts remains P0.
+        await trigger_message.answer(
+            "Оплата получена, но PDF пока не удалось доставить. "
+            "Повторно платить не нужно: заказ требует восстановления."
+        )
+        return
     await trigger_message.answer(
-        "📖 Сказка готова!" + (" Скачай PDF для чтения вслух!" if pdf_url else ""),
-        reply_markup=kb_after_story(pdf_url, episode, child_name),
+        "Сказка доставлена документом выше. Его можно открыть повторно в этом чате.",
+        reply_markup=kb_after_story(None, episode, child_name),
     )
-    await state.clear()  # Clear only after delivery; failed jobs retain paid state for recovery.
+    await state.clear()  # Payment-to-order recovery MUST be persisted before production.
 
 
 # ---------------------------------------------------------------------------
