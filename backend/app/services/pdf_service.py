@@ -19,18 +19,24 @@ _REGULAR_CANDIDATES = [
     '/usr/share/fonts/dejavu/DejaVuSans.ttf',
     '/usr/share/fonts/truetype/DejaVuSans.ttf',
     '/usr/share/fonts/TTF/DejaVuSans.ttf',
+    str(_FONTS_DIR / 'DejaVuSans.ttf'),
+    'C:/Windows/Fonts/arial.ttf',
 ]
 _BOLD_CANDIDATES = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
     '/usr/share/fonts/truetype/DejaVuSans-Bold.ttf',
     '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+    str(_FONTS_DIR / 'DejaVuSans-Bold.ttf'),
+    'C:/Windows/Fonts/arialbd.ttf',
 ]
 _ITALIC_CANDIDATES = [
     '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
     '/usr/share/fonts/dejavu/DejaVuSans-Oblique.ttf',
     '/usr/share/fonts/truetype/DejaVuSans-Oblique.ttf',
     '/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf',
+    str(_FONTS_DIR / 'DejaVuSans-Oblique.ttf'),
+    'C:/Windows/Fonts/ariali.ttf',
 ]
 
 # Fairy-tale Cyrillic font (Neucha — handwritten, child-friendly)
@@ -118,7 +124,7 @@ def _find_font(candidates: list[str], label: str) -> str:
     for path in candidates:
         if Path(path).exists():
             return path
-    raise RuntimeError(f'Font {label} not found. Run: apt-get install fonts-dejavu-core')
+    raise RuntimeError(f'Font {label} not found. Install DejaVu Sans or provide bundled font assets.')
 
 
 def _get_img_display_h(path: Path, display_w: float) -> float:
