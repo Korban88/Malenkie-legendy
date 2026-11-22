@@ -45,7 +45,7 @@ def health():
     return {'status': 'ok'}
 
 
-@app.get('/health_db')
+@app.get('/health_db', dependencies=[Depends(require_internal_token)])
 def health_database(db: Session = Depends(get_db)):
     return {'status': 'ok', 'tables': health_db(db)}
 
