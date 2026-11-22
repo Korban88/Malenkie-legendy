@@ -8,6 +8,7 @@ from urllib.parse import quote
 import httpx
 
 from ..config import get_settings
+from ..private_media import sign_cover_reference
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -352,7 +353,8 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
 
             if i == 0:
-                cover_public_url = urls[0]
+                # Together receives a time-limited cover reference, never a permanently public image.
+                cover_public_url = sign_cover_reference(filename) if settings.image_provider == 'together' else None
                 # For non-Together providers: extract style+character via GPT-4o Vision
                 if settings.image_provider != 'together':
                     try:
