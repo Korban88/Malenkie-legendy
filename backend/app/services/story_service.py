@@ -2,6 +2,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..book_release import require_complete_images, require_complete_pdf
 from ..models import Child, Order, Story, User
 from .image_service import generate_images
 from .pdf_service import generate_pdf
@@ -198,7 +199,9 @@ def generate_story(db: Session, payload: dict) -> Story:
             if photo_hash:
                 child.photo_hash = photo_hash
         except Exception as img_exc:
-            story.error_message = f'images_failed: {img_exc}'
+            raise RuntimeError('Illustration generation failed') from img_exc
+
+        require_complete_images(images_urls)
 
         pdf_url = generate_pdf(
             title=text_payload['title'],
@@ -209,6 +212,8 @@ def generate_story(db: Session, payload: dict) -> Story:
             next_hook=text_payload.get('next_hook', ''),
             gender=child.gender,
         )
+
+        require_complete_pdf(pdf_url)
 
         story.title = text_payload['title']
         story.story_text = text_payload['story_text']
