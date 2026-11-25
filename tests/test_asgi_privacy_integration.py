@@ -29,8 +29,13 @@ def test_private_file_routes_fail_closed(monkeypatch, tmp_path):
 
     # The existing legacy module creates all tables at import time.
     # Patch only that unsafe import-time DB action; live PG is tested separately.
-    with patch("backend.app.db.Base.metadata.create_all"):
-        from backend.app.main import app
+    import importlib
+    db_module = importlib.import_module("backend.app.db")
+    with patch.object(db_module.Base.metadata, "create_all"):
+        main_module = importlib.import_module("backend.app.main")
+    # Module-level settings may already be cached by another test.
+    monkeypatch.setattr(main_module, "settings", get_settings())
+    app = main_module.app
 
     with TestClient(app) as client:
         # Old public PDF endpoint must be entirely absent.
