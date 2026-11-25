@@ -15,7 +15,22 @@ jobs:
   isolated-unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: legendkids_test
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: legendkids_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U legendkids_test -d legendkids_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
+      LEGENDKIDS_TEST_POSTGRES_DSN: "postgresql+psycopg://legendkids_test:synthetic_ci_only@127.0.0.1:5432/legendkids_test"
       PYTHONDONTWRITEBYTECODE: "1"
       OPENROUTER_API_KEY: ""
       TOGETHER_API_KEY: ""
