@@ -6,14 +6,18 @@ real payment. SQLite is not evidence of PostgreSQL concurrency or crash recovery
 import asyncio
 import importlib
 import io
+import os
 import uuid
+
+import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
 from PIL import Image, ImageDraw
 from pypdf import PdfReader
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
@@ -28,7 +32,8 @@ from backend.app.services import pdf_service, story_service
 from backend.app.models import Order, Story
 
 
-def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch):
+@pytest.mark.parametrize("db_kind", ["sqlite", "postgresql"])
+def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind):
     db_module = importlib.import_module("backend.app.db")
     images_dir = tmp_path / "images"
     stories_dir = tmp_path / "stories"
@@ -60,10 +65,31 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch):
     def compile_test_jsonb(type_, compiler, **kwargs):
         return "JSON"
 
-    engine = create_engine(
-        "sqlite://", poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-    )
+    pg_admin = None
+    schema = None
+    if db_kind == "postgresql":
+        dsn = os.getenv("LEGENDKIDS_TEST_POSTGRES_DSN")
+        if not dsn:
+            deregister(JSONB)
+            pytest.skip("Dedicated loopback test PostgreSQL not configured")
+        url = make_url(dsn)
+        if (url.drivername != "postgresql+psycopg"
+                or url.host not in {"127.0.0.1", "localhost"}
+                or url.database != "legendkids_test"
+                or url.username != "legendkids_test"
+                or url.query):
+            deregister(JSONB)
+            raise RuntimeError("Only the dedicated loopback legendkids_test DB is allowed")
+        schema = "lk_smoke_" + uuid.uuid4().hex
+        pg_admin = create_engine(url)
+        with pg_admin.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
+    else:
+        engine = create_engine(
+            "sqlite://", poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
     try:
         db_module.Base.metadata.create_all(engine)
 
@@ -195,5 +221,11 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch):
             assert story.pdf_url
     finally:
         engine.dispose()
+        if pg_admin is not None:
+            try:
+                with pg_admin.begin() as conn:
+                    conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            finally:
+                pg_admin.dispose()
         deregister(JSONB)
         get_settings.cache_clear()
