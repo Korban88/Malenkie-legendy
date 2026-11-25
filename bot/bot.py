@@ -785,6 +785,17 @@ async def _generate(trigger_message: Message, state: FSMContext):
         await trigger_message.answer("❌ Что-то пошло не так. Попробуй ещё раз — напиши СКАЗКА.")
         return
 
+    # Do not deliver a failed/incomplete paid order, including legacy records.
+    if (result.get("status") != "ready" or not result.get("pdf_url")
+            or not result.get("story_text")
+            or len(result.get("images_urls") or []) != 5
+            or not all(result.get("images_urls") or [])):
+        await trigger_message.answer(
+            "Оплата получена, но полная иллюстрированная книга пока не готова. "
+            "Повторно платить не нужно. Заказ требует восстановления."
+        )
+        return
+
     story_text  = result.get("story_text", "")
     pdf_url     = result.get("pdf_url")
     raw_urls    = result.get("images_urls") or []
