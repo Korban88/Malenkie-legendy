@@ -8,3 +8,4 @@ reportlab==4.2.5
 python-multipart==0.0.17
 openai>=1.30.0
 fpdf2>=2.7.0
+pypdf==5.9.0
