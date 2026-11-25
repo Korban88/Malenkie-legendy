@@ -33,7 +33,8 @@ def generate_story_endpoint(payload: StoryGenerateRequest, db: Session = Depends
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f'Generation failed: {exc}') from exc
+        # Avoid returning internal paths, vendor errors or details of a child's data.
+        raise HTTPException(status_code=500, detail='Story generation failed') from exc
 
 
 @router.get('/story/{story_id}', response_model=StoryGenerateResponse)

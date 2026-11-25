@@ -19,6 +19,12 @@ class FakeSession:
         self.child = child
         self.added = []
 
+    def get_bind(self):
+        return SimpleNamespace(dialect=SimpleNamespace(name='sqlite'))
+
+    def commit(self):
+        pass
+
     def scalar(self, stmt):
         return next(self._scalar_results)
 
@@ -49,7 +55,7 @@ def test_repeat_paid_charge_reuses_order_and_story_without_new_order():
         user_id=10, child_id=99, status='paid',
     )
     story = SimpleNamespace(id=881, order_id=71, child_id=99)
-    db = FakeSession(scalar_results=[order, story], order=order)
+    db = FakeSession(scalar_results=[order, order, story], order=order)
 
     with patch.object(story_service, 'get_or_create_user', return_value=user), \
          patch.object(story_service, 'get_or_create_child', return_value=child):

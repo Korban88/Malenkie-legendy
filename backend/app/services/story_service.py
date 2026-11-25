@@ -2,6 +2,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..book_release import require_complete_images, require_complete_pdf
 from ..models import Child, Order, Story, User
 from .image_service import generate_images
 from .pdf_service import generate_pdf
@@ -75,7 +76,40 @@ def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
     return child
 
 
+def _serialize_paid_generation(db: Session, payload: dict) -> None:
+    """Serialize requests for a buyer and charge on PostgreSQL.
+
+    Transaction-scoped advisory locks are released even on disconnect.
+    Take both keys in a stable order to avoid deadlocks. SQLite is used only
+    for isolated smoke tests; this is not a concurrency guarantee on SQLite.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    keys = ["legendkids:buyer:" + payload["external_user_id"]]
+    charge = payload.get("telegram_payment_charge_id")
+    if charge:
+        keys.append("legendkids:charge:" + charge)
+    for key in sorted(keys):
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
+
+
+def _checkpoint_paid_order(db: Session, payload: dict, order_id: int) -> Order:
+    """Persist the receipt before provider work; reacquire generation locks.
+
+    A killed generation transaction must not erase an acknowledged paid order.
+    This checkpoint does not yet persist Telegram's pre-payment questionnaire,
+    schedule retries or implement a delivery outbox.
+    """
+    db.commit()
+    _serialize_paid_generation(db, payload)
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    if not order or order.status != "paid":
+        raise ValueError("Paid order no longer available")
+    return order
+
+
 def generate_story(db: Session, payload: dict) -> Story:
+    _serialize_paid_generation(db, payload)
     user = get_or_create_user(db, payload['external_user_id'], payload.get('channel', 'telegram'))
     child = get_or_create_child(db, payload, user.id)
 
@@ -121,6 +155,14 @@ def generate_story(db: Session, payload: dict) -> Story:
         raise ValueError('Order does not belong to this user and child')
     if charge_id and paid_order.provider_payment_id != charge_id:
         raise ValueError('Payment ID does not match order')
+
+    # Commit the paid receipt before expensive provider requests. Recheck ownership
+    # after the transaction boundary while holding the paid-order lock.
+    paid_order = _checkpoint_paid_order(db, payload, order_id)
+    if paid_order.user_id != user.id or paid_order.child_id != child.id:
+        raise ValueError("Order does not belong to this user and child")
+    if charge_id and paid_order.provider_payment_id != charge_id:
+        raise ValueError("Payment ID does not match order")
 
     # A paid order is an idempotency key: never create a second story for it.
     # A failed existing story needs a separate explicit retry/recovery flow.
@@ -198,7 +240,9 @@ def generate_story(db: Session, payload: dict) -> Story:
             if photo_hash:
                 child.photo_hash = photo_hash
         except Exception as img_exc:
-            story.error_message = f'images_failed: {img_exc}'
+            raise RuntimeError('Illustration generation failed') from img_exc
+
+        require_complete_images(images_urls)
 
         pdf_url = generate_pdf(
             title=text_payload['title'],
@@ -209,6 +253,8 @@ def generate_story(db: Session, payload: dict) -> Story:
             next_hook=text_payload.get('next_hook', ''),
             gender=child.gender,
         )
+
+        require_complete_pdf(pdf_url)
 
         story.title = text_payload['title']
         story.story_text = text_payload['story_text']

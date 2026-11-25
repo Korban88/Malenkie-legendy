@@ -1,12 +1,14 @@
 import logging
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import Base, engine, get_db
+from .internal_auth import require_internal_token
+from .private_media import locate_media, verify_cover_reference
 from .routers.payment import router as payment_router
 from .routers.story import router as story_router
 from .services.cost_guard import ALLOWED_MODELS, BLOCKED_SUBSTRINGS
@@ -43,18 +45,40 @@ def health():
     return {'status': 'ok'}
 
 
-@app.get('/health_db')
+@app.get('/health_db', dependencies=[Depends(require_internal_token)])
 def health_database(db: Session = Depends(get_db)):
     return {'status': 'ok', 'tables': health_db(db)}
 
 
-@app.get('/files/stories/{filename}')
-def files_stories(filename: str):
-    path = Path(settings.stories_dir) / filename
-    return FileResponse(path)
+def _checked_file(directory: str, filename: str, kind: str, media_type: str) -> FileResponse:
+    try:
+        path = locate_media(directory, filename, kind=kind)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(status_code=404, detail="Media not found")
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store"})
+
+
+@app.get('/api/internal/files/stories/{filename}', dependencies=[Depends(require_internal_token)])
+def internal_story_pdf(filename: str):
+    """Only the authenticated Telegram bot may fetch purchased PDFs."""
+    return _checked_file(settings.stories_dir, filename, 'stories', 'application/pdf')
+
+
+@app.get('/api/internal/files/images/{filename}', dependencies=[Depends(require_internal_token)])
+def internal_story_image(filename: str):
+    """Images are sent by the Telegram bot as attachments, not public URLs."""
+    return _checked_file(settings.images_dir, filename, 'images', 'image/png')
 
 
 @app.get('/files/images/{filename}')
-def files_images(filename: str):
-    path = Path(settings.images_dir) / filename
-    return FileResponse(path)
+def temporary_cover_reference(
+    filename: str,
+    expires: int | None = Query(default=None),
+    signature: str | None = Query(default=None),
+):
+    """A narrow 30-minute URL for Together AI to fetch the cover for subsequent images."""
+    if not verify_cover_reference(filename, expires, signature):
+        raise HTTPException(status_code=404, detail="Media not found")
+    return _checked_file(settings.images_dir, filename, 'images', 'image/png')
+
+# Intentionally no public /files/stories route: all customer books stay private.
