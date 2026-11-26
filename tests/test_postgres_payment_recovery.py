@@ -82,6 +82,8 @@ def test_paid_receipt_survives_interrupted_generation_transaction(postgres, monk
         order = recovered.scalar(select(Order))
         assert order.provider_payment_id == "synthetic-charge-42"
         assert order.status == "paid"
+        assert order.meta['questionnaire_v1']['version'] == 1
+        assert order.meta['questionnaire_v1']['child_name'] == 'Тест'
         assert recovered.scalar(select(func.count()).select_from(Order)) == 1
         assert recovered.scalar(select(func.count()).select_from(Story)) == 0
 

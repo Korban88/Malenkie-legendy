@@ -97,8 +97,8 @@ def _checkpoint_paid_order(db: Session, payload: dict, order_id: int) -> Order:
     """Persist the receipt before provider work; reacquire generation locks.
 
     A killed generation transaction must not erase an acknowledged paid order.
-    This checkpoint does not yet persist Telegram's pre-payment questionnaire,
-    schedule retries or implement a delivery outbox.
+    The paid receipt includes the generation questionnaire snapshot. Telegram's
+    pre-payment questionnaire, retry scheduling and delivery outbox remain separate.
     """
     db.commit()
     _serialize_paid_generation(db, payload)
@@ -106,6 +106,35 @@ def _checkpoint_paid_order(db: Session, payload: dict, order_id: int) -> Order:
     if not order or order.status != "paid":
         raise ValueError("Paid order no longer available")
     return order
+
+
+def _paid_questionnaire(order: Order, child: Child, payload: dict) -> dict:
+    """Freeze generation inputs with the paid receipt, never raw photo bytes.
+
+    Existing metadata JSON avoids a production schema mutation. Historic receipts
+    without a snapshot acquire one on their first explicit recovery request.
+    """
+    meta = dict(getattr(order, 'meta', None) or {})
+    existing = meta.get('questionnaire_v1')
+    if existing is not None:
+        if not isinstance(existing, dict) or existing.get('version') != 1:
+            raise ValueError('Paid questionnaire snapshot is invalid')
+        return dict(existing)
+    defaults = {'child_name': getattr(child, 'name', payload.get('child_name')),
+                'age': getattr(child, 'age', payload.get('age')),
+                'gender': getattr(child, 'gender', 'neutral'),
+                'style': getattr(child, 'preferred_style', 'auto'),
+                'image_style': 'watercolor', 'purpose': 'bedtime',
+                'parent_note': getattr(child, 'parent_note', None),
+                'favorite_animal': getattr(child, 'favorite_animal', None) or 'кот',
+                'favorite_color': getattr(child, 'favorite_color', None) or 'синий',
+                'hobby': getattr(child, 'hobby', None) or 'рисование',
+                'favorite_place': getattr(child, 'favorite_place', None) or 'лес',
+                'episode_number': None, 'photo_enabled': False}
+    snapshot = {'version': 1, **{key: payload.get(key) if payload.get(key) is not None else value
+                                 for key, value in defaults.items()}}
+    order.meta = {**meta, 'questionnaire_v1': snapshot}
+    return dict(snapshot)
 
 
 def generate_story(db: Session, payload: dict) -> Story:
@@ -158,6 +187,7 @@ def generate_story(db: Session, payload: dict) -> Story:
 
     # Commit the paid receipt before expensive provider requests. Recheck ownership
     # after the transaction boundary while holding the paid-order lock.
+    questionnaire = _paid_questionnaire(paid_order, child, payload)
     paid_order = _checkpoint_paid_order(db, payload, order_id)
     if paid_order.user_id != user.id or paid_order.child_id != child.id:
         raise ValueError("Order does not belong to this user and child")
@@ -174,7 +204,7 @@ def generate_story(db: Session, payload: dict) -> Story:
     if get_settings().force_episode_one:
         episode_number = 1
     else:
-        episode_number = payload.get('episode_number') or (max_episode + 1)
+        episode_number = questionnaire.get('episode_number') or (max_episode + 1)
 
     existing = db.scalar(select(Story).where(Story.child_id == child.id, Story.episode_number == episode_number))
     if existing:
@@ -190,9 +220,9 @@ def generate_story(db: Session, payload: dict) -> Story:
     previous_memory = latest_story.memory if latest_story else {}
     previous_recap = latest_story.recap if latest_story else []
 
-    style = choose_style(child.age, payload.get('style') or child.preferred_style)
-    image_style = payload.get('image_style', 'watercolor')
-    purpose = payload.get('purpose', 'bedtime')
+    style = choose_style(questionnaire['age'], questionnaire['style'])
+    image_style = questionnaire['image_style']
+    purpose = questionnaire['purpose']
 
     story = Story(
         child_id=child.id,
@@ -207,20 +237,20 @@ def generate_story(db: Session, payload: dict) -> Story:
     try:
         text_payload = generate_story_payload(
             {
-                'child_name': child.name,
-                'age': child.age,
-                'gender': child.gender,
+                'child_name': questionnaire['child_name'],
+                'age': questionnaire['age'],
+                'gender': questionnaire['gender'],
                 'style': style,
                 'episode_number': episode_number,
-                'parent_note': payload.get('parent_note') or child.parent_note,
+                'parent_note': questionnaire['parent_note'],
                 'previous_memory': previous_memory,
                 'previous_recap': previous_recap,
                 'image_style': image_style,
                 'purpose': purpose,
-                'favorite_animal': child.favorite_animal or payload.get('favorite_animal') or 'кот',
-                'favorite_color': child.favorite_color or payload.get('favorite_color') or 'синий',
-                'hobby': child.hobby or payload.get('hobby') or 'рисование',
-                'favorite_place': child.favorite_place or payload.get('favorite_place') or 'лес',
+                'favorite_animal': questionnaire['favorite_animal'],
+                'favorite_color': questionnaire['favorite_color'],
+                'hobby': questionnaire['hobby'],
+                'favorite_place': questionnaire['favorite_place'],
             }
         )
 
@@ -228,10 +258,10 @@ def generate_story(db: Session, payload: dict) -> Story:
         photo_hash = None
         try:
             images_urls, photo_hash = generate_images(
-                child_name=child.name,
-                age=child.age,
+                child_name=questionnaire['child_name'],
+                age=questionnaire['age'],
                 style=style,
-                photo_base64=payload.get('photo_base64') if payload.get('photo_enabled') else None,
+                photo_base64=payload.get('photo_base64') if questionnaire['photo_enabled'] else None,
                 char_desc=text_payload.get('char_desc', ''),
                 scene_prompts=text_payload.get('image_prompts', []),
                 count=5,
@@ -249,9 +279,9 @@ def generate_story(db: Session, payload: dict) -> Story:
             story_text=text_payload['story_text'],
             image_urls=images_urls,
             episode_number=episode_number,
-            child_name=child.name,
+            child_name=questionnaire['child_name'],
             next_hook=text_payload.get('next_hook', ''),
-            gender=child.gender,
+            gender=questionnaire['gender'],
         )
 
         require_complete_pdf(pdf_url)
