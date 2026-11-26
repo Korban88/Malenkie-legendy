@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Order, User
+from ..money import Money
 
 
 def create_order(
@@ -13,6 +14,7 @@ def create_order(
     amount_rub: int,
     provider: str,
 ) -> Order:
+    money = Money.from_rubles(amount_rub)
     user = db.scalar(select(User).where(User.external_id == external_user_id))
     if not user:
         user = User(external_id=external_user_id, channel=channel)
@@ -27,6 +29,7 @@ def create_order(
         provider=provider,
         status='created',
         meta={
+            'money_v1': money.to_metadata(),
             'payment_url': f'https://pay.example/{provider}/{user.id}/{child_id}/{tariff}',
             'instructions': 'После оплаты вызовите /api/payments/confirm',
         },

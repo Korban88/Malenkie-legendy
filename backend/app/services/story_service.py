@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..book_release import require_complete_images, require_complete_pdf
 from ..models import Child, Order, Story, User
+from ..money import Money
 from .image_service import generate_images
 from .pdf_service import generate_pdf
 from .text_service import choose_style, generate_story_payload
@@ -163,15 +164,16 @@ def generate_story(db: Session, payload: dict) -> Story:
             order_id = existing_payment.id
         else:
             photo_enabled = payload.get('photo_enabled', False)
+            money = Money(currency='XTR', minor_units=200 if photo_enabled else 150)
             order = Order(
                 user_id=user.id,
                 child_id=child.id,
                 tariff='story_with_photo' if photo_enabled else 'story',
-                amount_rub=200 if photo_enabled else 150,  # amount is XTR, not RUB: schema migration required
+                amount_rub=money.minor_units,  # XTR in legacy column; schema migration required
                 provider='telegram_stars',
                 status='paid',
                 provider_payment_id=charge_id,
-                meta={'currency': 'XTR'},
+                meta={'currency': 'XTR', 'money_v1': money.to_metadata()},
             )
             db.add(order)
             db.flush()
