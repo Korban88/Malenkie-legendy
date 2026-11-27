@@ -4,6 +4,7 @@ Telegram events and text/image providers are synthetic. No external network or
 real payment. SQLite is not evidence of PostgreSQL concurrency or crash recovery.
 """
 import asyncio
+import base64
 import importlib
 import io
 import os
@@ -33,7 +34,8 @@ from backend.app.models import Order, Story
 
 
 @pytest.mark.parametrize("db_kind", ["sqlite", "postgresql"])
-def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind):
+@pytest.mark.parametrize("with_photo", [False, True])
+def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind, with_photo):
     db_module = importlib.import_module("backend.app.db")
     images_dir = tmp_path / "images"
     stories_dir = tmp_path / "stories"
@@ -122,7 +124,8 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
 
         def fake_images(**kwargs):
             assert kwargs["count"] == 5
-            assert kwargs["photo_base64"] is None
+            expected_photo = base64.b64encode(b"synthetic-photo").decode() if with_photo else None
+            assert kwargs["photo_base64"] == expected_photo
             result = []
             for i in range(5):
                 filename = uuid.uuid4().hex + ".png"
@@ -138,6 +141,10 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
         monkeypatch.setattr(bot, "STEP_IMAGES_DIR", tmp_path / "nonexistent-ui")
         monkeypatch.setattr(bot, "BACKEND_URL", "http://testserver")
         monkeypatch.setattr(bot, "BACKEND_INTERNAL_TOKEN", secret)
+        get_photo = AsyncMock(return_value=SimpleNamespace(file_path="synthetic.png"))
+        download_photo = AsyncMock(return_value=io.BytesIO(b"synthetic-photo"))
+        monkeypatch.setattr(bot.bot, "get_file", get_photo)
+        monkeypatch.setattr(bot.bot, "download_file", download_photo)
         original_async_client = httpx.AsyncClient
 
         def in_process_client(**kwargs):
@@ -179,11 +186,17 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             await bot.cb_color(callback("color:синий"), state)
             await bot.cb_hobby(callback("hobby:рисование"), state)
             await bot.cb_place(callback("place:лес"), state)
-            await bot.cb_photo_choice(callback("photo:no"), state)
+            if with_photo:
+                await bot.cb_photo_choice(callback("photo:yes"), state)
+                message.photo = [SimpleNamespace(file_id="synthetic-photo-reference")]
+                await bot.form_photo(message, state)
+            else:
+                await bot.cb_photo_choice(callback("photo:no"), state)
+            amount = 200 if with_photo else 150
             message.answer_invoice.assert_awaited_once()
             invoice = message.answer_invoice.await_args.kwargs
             assert invoice["currency"] == "XTR"
-            assert invoice["prices"][0].amount == 150
+            assert invoice["prices"][0].amount == amount
 
             # The invoice exists in a new DB session BEFORE Telegram payment.
             with Session(engine) as observer:
@@ -201,7 +214,7 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert not await state.get_data()
 
             checkout = SimpleNamespace(
-                invoice_payload=invoice["payload"], total_amount=150,
+                invoice_payload=invoice["payload"], total_amount=amount,
                 currency="XTR", from_user=message.from_user, answer=AsyncMock(),
             )
             await bot.pre_checkout(checkout, state)
@@ -211,7 +224,7 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert checkout.answer.await_args.kwargs["ok"] is False
 
             message.successful_payment = SimpleNamespace(
-                invoice_payload=invoice["payload"], total_amount=150,
+                invoice_payload=invoice["payload"], total_amount=amount,
                 currency="XTR", telegram_payment_charge_id="synthetic-charge-001",
             )
             # A second memory loss between checkout approval and receipt must
@@ -234,7 +247,12 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             # A newer questionnaire must remain untouched by an old payment.
             await state.set_state(bot.Form.name)
             await state.update_data(child_name="Новая анкета")
+            assert get_photo.await_count == int(with_photo)
+            assert download_photo.await_count == int(with_photo)
+            get_photo.side_effect = RuntimeError("original photo no longer available")
             await bot.successful_payment_handler(message, state)
+            assert get_photo.await_count == int(with_photo)
+            assert download_photo.await_count == int(with_photo)
             assert message.answer_document.await_count == 2
             assert message.answer_document.await_args.kwargs["document"].data == pdf.data
             assert len(generation_calls) == 1

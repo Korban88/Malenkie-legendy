@@ -76,5 +76,6 @@ class TelegramReceiptResponse(BaseModel):
     child_id: int
     status: Literal['paid']
     replayed: bool
+    ready_story_id: int | None = None
     generation_payload: dict
     photo_file_id: str | None

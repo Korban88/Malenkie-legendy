@@ -15,7 +15,7 @@ from sqlalchemy.ext.compiler import compiles, deregister
 from sqlalchemy.orm import Session
 
 from backend.app.db import Base
-from backend.app.models import Child, Order, User
+from backend.app.models import Child, Order, Story, User
 from backend.app.services.telegram_checkout import (
     accept_telegram_receipt,
     check_telegram_invoice,
@@ -282,3 +282,33 @@ def test_postgres_concurrent_invoice_retries_use_one_snapshot(checkout_postgres)
         assert observer.scalar(select(func.count()).select_from(Order)) == 1
         assert observer.scalar(select(func.count()).select_from(User)) == 1
         assert observer.scalar(select(func.count()).select_from(Child)) == 1
+
+
+def test_ready_story_id_is_bound_to_validated_paid_invoice(checkout_engine):
+    with Session(checkout_engine) as db:
+        invoice = create_telegram_invoice(db, questionnaire())
+        other = create_telegram_invoice(db, questionnaire(
+            external_user_id='other-buyer', client_request_id='c' * 32,
+        ))
+        paid = {**payment(invoice), 'telegram_payment_charge_id': 'synthetic-ready-charge'}
+        receipt = accept_telegram_receipt(db, paid)
+        assert receipt['ready_story_id'] is None
+        db.add(Story(order_id=other['order_id'],
+                     child_id=db.get(Order, other['order_id']).child_id,
+                     episode_number=1, status='ready'))
+        db.add(Story(order_id=invoice['order_id'], child_id=receipt['child_id'],
+                     episode_number=1, status='failed'))
+        db.commit()
+    with Session(checkout_engine) as db:
+        assert accept_telegram_receipt(db, paid)['ready_story_id'] is None
+        story = db.scalar(select(Story).where(Story.order_id == invoice['order_id']))
+        story.status = 'ready'
+        db.commit()
+        story_id = story.id
+    with Session(checkout_engine) as db:
+        assert accept_telegram_receipt(db, paid)['ready_story_id'] == story_id
+        with pytest.raises(ValueError):
+            accept_telegram_receipt(db, {**paid, 'external_user_id': 'other-buyer'})
+    with Session(checkout_engine) as db:
+        with pytest.raises(ValueError, match='different payment'):
+            accept_telegram_receipt(db, {**paid, 'telegram_payment_charge_id': 'wrong-charge'})

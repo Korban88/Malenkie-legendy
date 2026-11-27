@@ -360,9 +360,32 @@ async def successful_payment_handler(message: Message, state: FSMContext):
             "Повторно платить не нужно. Заказ требует проверки."
         )
         return
+    data = receipt["generation_payload"]
+    ready_story_id = receipt.get("ready_story_id")
+    if ready_story_id is not None:
+        # Receipt acceptance checked the payer, charge, and invoice.
+        # A ready book must not depend on continued availability of the photo.
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                response = await client.get(
+                    f"{BACKEND_URL.rstrip('/')}/api/story/{ready_story_id}",
+                    headers={"X-Legend-Internal-Key": BACKEND_INTERNAL_TOKEN},
+                )
+                response.raise_for_status()
+                result = response.json()
+            if (result.get("story_id") != ready_story_id
+                    or result.get("child_id") != data["child_id"]):
+                raise ValueError("Saved story does not match the paid order")
+        except Exception:
+            await message.answer(
+                "Платёж сохранён, но готовую книгу пока не удалось получить. "
+                "Повторно платить не нужно."
+            )
+            return
+        await _deliver_generated_book(message, state, data, result)
+        return
     await message.answer(f"Оплата заказа №{receipt['order_id']} сохранена. Подготавливаю книгу.")
-    await _generate(message, state, receipt["generation_payload"],
-                    photo_file_id=receipt.get("photo_file_id"))
+    await _generate(message, state, data, photo_file_id=receipt.get("photo_file_id"))
 
 
 # ---------------------------------------------------------------------------
@@ -865,6 +888,12 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
         )
         return
 
+    await _deliver_generated_book(trigger_message, state, data, result)
+
+
+async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
+                                  data: dict, result: dict):
+    child_name = data.get("child_name", "Герой")
     # Do not deliver a failed/incomplete paid order, including legacy records.
     if (result.get("status") != "ready" or not result.get("pdf_url")
             or not result.get("story_text")
