@@ -7,6 +7,7 @@ import httpx
 
 from ..book_release import require_illustration_prompts
 from ..config import get_settings
+from ..story_structure import require_four_chapters
 
 settings = get_settings()
 log = logging.getLogger(__name__)
@@ -825,16 +826,16 @@ def _template_fallback(payload: dict) -> dict:
             f"А потом {name} {zametil}: {place} не изменился. Изменил{g_suf}ся {pron} {sebya_suf}."
         )
         image_prompts = [
-            f'storybook cover: the child and {animal} on the path through the magical {place}, '
-            f'an ancient wooden door and the distant sleeping Guardian beyond the trees',
-            f'meeting the talking {animal} beside a broad tree in {place} at dawn, '
-            f'golden light filtering through, the child listening with curiosity',
+            f'book cover: {animal} and the child beside a sleeping guardian in {place}, '
+            f'one quiet moment framed by the wooden bridge, no lettering',
+            f'meeting the talking {animal} beside a broad tree in {place} in the morning, '
+            f'the child has stopped to listen, warm light filtering through the branches',
             f'crossing a wooden bridge in {place} in total silence, moving carefully, '
             f'{animal} following closely, atmospheric mist below, wide shot',
             f'sitting opposite a wise old man in a cosy small house, {animal} nearby, '
             f'warm lamplight, thoughtful atmosphere, medium wide shot',
-            f'waking the enormous gentle Guardian beyond the ancient wooden door in {place}, '
-            f'the child and {animal} beside the open doorway, warm amber light returning',
+            f'the child greeting the waking guardian through the old wooden door in {place}, '
+            f'{animal} at the threshold, warm amber light, medium shot',
         ]
         recap_items = [
             f'{name} прошёл{"а" if gender == "female" else ""} три испытания в {place}е.',
@@ -911,8 +912,8 @@ def _template_fallback(payload: dict) -> dict:
             f"И {pron} {ego} немного знал{g_suf}."
         )
         image_prompts = [
-            f'storybook cover: the child and warmly glowing {animal} looking towards the Silver Cave, '
-            f'a grey {place} with a trace of returning gold in the distance',
+            f'book cover: the child and {animal} outside the silver cave in {place}, '
+            f'one small golden reflection in the grey landscape, no lettering',
             f'walking through a faded grey {place} with warmly glowing {animal} companion, '
             f'striking contrast between colourless world and magical warm light, '
             f'wide establishing shot, sense of mystery and quest',
@@ -961,22 +962,6 @@ def _template_fallback(payload: dict) -> dict:
     }
 
 
-def _require_four_chapters(story: str) -> None:
-    """Match the cover + four chapter images to the actual paragraph boundaries."""
-    paragraphs = [p.strip() for p in story.split('\n\n') if p.strip()]
-    headings = [(i, p) for i, p in enumerate(paragraphs) if p.startswith('Глава')]
-    if len(headings) != 4 or headings[0][0] != 0:
-        raise ValueError('Story must contain four ordered chapters without a preface')
-    for number, (index, heading) in enumerate(headings, 1):
-        word = ('первая', 'вторая', 'третья', 'четвёртая')[number - 1]
-        pattern = rf'Глава (?:{number}|{word})[.:]\s+\S[^\n]*'
-        if number == 4:
-            pattern = rf'Глава (?:4|четвёртая|четвертая)[.:]\s+\S[^\n]*'
-        end = headings[number][0] if number < 4 else len(paragraphs)
-        if re.fullmatch(pattern, heading, flags=re.IGNORECASE) is None or end <= index + 1:
-            raise ValueError('Story must contain four ordered chapters with body text')
-
-
 def generate_story_payload(payload: dict) -> dict:
     payload['style'] = choose_style(payload['age'], payload.get('style', 'auto'))
     provider = settings.text_provider
@@ -1015,7 +1000,7 @@ def generate_story_payload(payload: dict) -> dict:
     # Normalize paragraph separators: LLM sometimes sends single \n instead of \n\n
     if '\n\n' not in story and '\n' in story:
         story = story.replace('\n', '\n\n')
-    _require_four_chapters(story)
+    require_four_chapters(story)
     result['story_text'] = story
     # Inject deterministic char_desc so image_service can prefix every prompt consistently
     result['char_desc'] = _build_char_desc(

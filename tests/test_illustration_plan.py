@@ -5,6 +5,7 @@ import pytest
 
 from backend.app.book_release import EXPECTED_IMAGES
 from backend.app.services import image_service, text_service
+from backend.app.story_structure import story_sections
 
 
 def questionnaire():
@@ -58,3 +59,32 @@ def test_missing_final_scene_never_reaches_an_image_provider(monkeypatch):
     with pytest.raises(ValueError, match="illustration prompts"):
         image_service.generate_images("Нина", 7, "nature", None,
                                       scene_prompts=["cover", "one", "two", "three"])
+
+
+@pytest.mark.parametrize("episode", [1, 2])
+def test_real_fallback_pairs_each_of_four_chapters_with_a_scene(monkeypatch, episode):
+    monkeypatch.setattr(text_service.settings, "text_provider", "template")
+    result = text_service.generate_story_payload({**questionnaire(), "episode_number": episode})
+    sections = story_sections(result["story_text"])
+    assert [title.split(".")[0] for title, _ in sections] == [
+        "Глава первая", "Глава вторая", "Глава третья", "Глава четвёртая",
+    ]
+    assert all(paragraphs for _, paragraphs in sections)
+    cover, *scenes = result["image_prompts"]
+    assert cover.startswith("book cover:") and len(scenes) == 4
+    assert len(set(result["image_prompts"])) == 5
+
+
+@pytest.mark.parametrize("story", [
+    "Описание без глав.",
+    "\n".join(f"Глава {n}. Событие\nНина входит." for n in range(1, 6)),
+    "\n".join(f"Глава {n}. Событие\nНина входит." for n in (1, 2, 4, 4)),
+    "Глава 1. А\nТекст.\nГлава 2. Б\nТекст.\nГлава 3. В\nГлава 4. Г\nТекст.",
+])
+def test_invalid_chapter_structure_stops_before_art(monkeypatch, story):
+    monkeypatch.setattr(text_service.settings, "text_provider", "template")
+    monkeypatch.setattr(text_service, "_template_fallback", lambda _: {
+        "story_text": story, "image_prompts": ["cover", "one", "two", "three", "four"],
+    })
+    with pytest.raises(ValueError, match="Four nonempty chapters"):
+        text_service.generate_story_payload(questionnaire())
