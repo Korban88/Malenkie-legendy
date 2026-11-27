@@ -810,7 +810,6 @@ def _template_fallback(payload: dict) -> dict:
             f"Дверь медленно открылась — как будто наконец услышала то, чего давно ждала.\n\n"
             f"— Я знал{an_suf}, — тихо {an_skazal} {animal}.\n\n"
 
-            f"Глава пятая. Пробуждение\n\n"
             f"За дверью дремал Страж. Огромный — больше любого дерева, меньше горы — "
             f"и совсем не пугающий. Скорее очень усталый.\n\n"
             f"— Как его разбудить? — шёпотом {sprosil} {name}.\n\n"
@@ -826,16 +825,16 @@ def _template_fallback(payload: dict) -> dict:
             f"А потом {name} {zametil}: {place} не изменился. Изменил{g_suf}ся {pron} {sebya_suf}."
         )
         image_prompts = [
-            f'running through the magical {place} at dawn, {animal} leaping alongside, '
-            f'golden light filtering through, wide establishing shot, sense of adventure beginning',
+            f'storybook cover: the child and {animal} on the path through the magical {place}, '
+            f'an ancient wooden door and the distant sleeping Guardian beyond the trees',
+            f'meeting the talking {animal} beside a broad tree in {place} at dawn, '
+            f'golden light filtering through, the child listening with curiosity',
             f'crossing a wooden bridge in {place} in total silence, moving carefully, '
             f'{animal} following closely, atmospheric mist below, wide shot',
             f'sitting opposite a wise old man in a cosy small house, {animal} nearby, '
             f'warm lamplight, thoughtful atmosphere, medium wide shot',
-            f'channelling the power of {hobby} before an ancient wooden door in {place}, '
-            f'soft magical glow, {animal} watching with hope, warm amber light, medium shot',
-            f'celebrating with {animal} in a beautifully restored {place}, '
-            f'golden light everywhere, joyful wide shot, magical sparkles, triumphant mood',
+            f'waking the enormous gentle Guardian beyond the ancient wooden door in {place}, '
+            f'the child and {animal} beside the open doorway, warm amber light returning',
         ]
         recap_items = [
             f'{name} прошёл{"а" if gender == "female" else ""} три испытания в {place}е.',
@@ -898,7 +897,6 @@ def _template_fallback(payload: dict) -> dict:
             f"— Можно... и мне попробовать? — прошептало существо.\n\n"
             f"— Конечно, — {skazal} {name} с улыбкой. — Я покажу.\n\n"
 
-            f"Глава пятая. Возвращение красок\n\n"
             f"Когда они вышли из пещеры, {place} был совсем другим. "
             f"Краски вернулись — даже ярче прежнего, словно {place} соскучил{g_suf}ся по ним.\n\n"
             f"Туманный Вор шёл рядом — уже не серый, а чуть золотистый по краям. "
@@ -913,6 +911,8 @@ def _template_fallback(payload: dict) -> dict:
             f"И {pron} {ego} немного знал{g_suf}."
         )
         image_prompts = [
+            f'storybook cover: the child and warmly glowing {animal} looking towards the Silver Cave, '
+            f'a grey {place} with a trace of returning gold in the distance',
             f'walking through a faded grey {place} with warmly glowing {animal} companion, '
             f'striking contrast between colourless world and magical warm light, '
             f'wide establishing shot, sense of mystery and quest',
@@ -922,8 +922,6 @@ def _template_fallback(payload: dict) -> dict:
             f'{animal} approaching gently, warm light appearing, medium emotional shot',
             f'using the power of {hobby} to fill the cave with golden colour and light, '
             f'magical particles swirling, creature watching in wonder, {animal} beside, wide shot',
-            f'returning to a brilliantly colourful {place} with {animal} and a newly golden creature, '
-            f'joyful wide shot, warm golden light, magical sparkles everywhere',
         ]
         recap_items = [
             f'{name} спас{"ла" if gender == "female" else ""} краски {place}а.',
@@ -961,6 +959,22 @@ def _template_fallback(payload: dict) -> dict:
         },
         'next_hook': next_hook,
     }
+
+
+def _require_four_chapters(story: str) -> None:
+    """Match the cover + four chapter images to the actual paragraph boundaries."""
+    paragraphs = [p.strip() for p in story.split('\n\n') if p.strip()]
+    headings = [(i, p) for i, p in enumerate(paragraphs) if p.startswith('Глава')]
+    if len(headings) != 4 or headings[0][0] != 0:
+        raise ValueError('Story must contain four ordered chapters without a preface')
+    for number, (index, heading) in enumerate(headings, 1):
+        word = ('первая', 'вторая', 'третья', 'четвёртая')[number - 1]
+        pattern = rf'Глава (?:{number}|{word})[.:]\s+\S[^\n]*'
+        if number == 4:
+            pattern = rf'Глава (?:4|четвёртая|четвертая)[.:]\s+\S[^\n]*'
+        end = headings[number][0] if number < 4 else len(paragraphs)
+        if re.fullmatch(pattern, heading, flags=re.IGNORECASE) is None or end <= index + 1:
+            raise ValueError('Story must contain four ordered chapters with body text')
 
 
 def generate_story_payload(payload: dict) -> dict:
@@ -1001,6 +1015,7 @@ def generate_story_payload(payload: dict) -> dict:
     # Normalize paragraph separators: LLM sometimes sends single \n instead of \n\n
     if '\n\n' not in story and '\n' in story:
         story = story.replace('\n', '\n\n')
+    _require_four_chapters(story)
     result['story_text'] = story
     # Inject deterministic char_desc so image_service can prefix every prompt consistently
     result['char_desc'] = _build_char_desc(
