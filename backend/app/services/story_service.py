@@ -10,6 +10,9 @@ from .pdf_service import generate_pdf
 from .text_service import choose_style, generate_story_payload
 
 
+PDF_PENDING_STATES = ('pdf_pending', 'pdf_retry')
+
+
 def health_db(db: Session) -> list[str]:
     rows = db.execute(
         text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")
@@ -27,30 +30,29 @@ def get_or_create_user(db: Session, external_user_id: str, channel: str) -> User
     return user
 
 
-def get_or_create_child(db: Session, payload: dict, user_id: int) -> Child:
+def get_or_create_child(db: Session, payload: dict, user_id: int, *, existing_only: bool = False) -> Child:
     if payload.get('child_id'):
-        child = db.get(Child, payload['child_id'])
-        if not child:
+        existing_child = db.get(Child, payload['child_id'])
+        if not existing_child:
             raise ValueError('Child not found')
-        if child.user_id != user_id:
+        if existing_child.user_id != user_id:
             raise ValueError('Child does not belong to this user')
-        for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
-            val = payload.get(field)
-            if val:
-                setattr(child, field, val)
-        db.flush()
-        return child
-
-    if not payload.get('child_name') or not payload.get('age'):
-        raise ValueError('child_name and age are required for new child')
-
-    existing_child = db.scalar(
-        select(Child).where(
-            Child.user_id == user_id,
-            Child.name == payload['child_name'],
-            Child.age == payload['age'],
+    else:
+        if not payload.get('child_name') or not payload.get('age'):
+            raise ValueError('child_name and age are required for new child')
+        existing_child = db.scalar(
+            select(Child).where(
+                Child.user_id == user_id,
+                Child.name == payload['child_name'],
+                Child.age == payload['age'],
+            )
         )
-    )
+    if existing_only:
+        # Render the paid snapshot without overwriting preferences saved by
+        # a later questionnaire for the same child.
+        if existing_child is None:
+            raise ValueError('Child not found for the paid order')
+        return existing_child
     if existing_child:
         for field in ('favorite_animal', 'favorite_color', 'hobby', 'favorite_place'):
             val = payload.get(field)
@@ -94,7 +96,7 @@ def _serialize_paid_generation(db: Session, payload: dict) -> None:
         db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": key})
 
 
-def _checkpoint_paid_order(db: Session, payload: dict, order_id: int) -> Order:
+def _checkpoint_paid_order(db: Session, payload: dict, order_id: int, user_id: int, child_id: int) -> Order:
     """Persist the receipt before provider work; reacquire generation locks.
 
     A killed generation transaction must not erase an acknowledged paid order.
@@ -103,9 +105,15 @@ def _checkpoint_paid_order(db: Session, payload: dict, order_id: int) -> Order:
     """
     db.commit()
     _serialize_paid_generation(db, payload)
-    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
+    order = db.scalar(select(Order).where(Order.id == order_id).with_for_update()
+                      .execution_options(populate_existing=True))
     if not order or order.status != "paid":
         raise ValueError("Paid order no longer available")
+    if order.user_id != user_id or order.child_id != child_id:
+        raise ValueError("Order does not belong to this user and child")
+    charge = payload.get('telegram_payment_charge_id')
+    if charge and order.provider_payment_id != charge:
+        raise ValueError("Payment ID does not match order")
     return order
 
 
@@ -138,10 +146,38 @@ def _paid_questionnaire(order: Order, child: Child, payload: dict) -> dict:
     return dict(snapshot)
 
 
+def _finish_paid_pdf(db: Session, story: Story, questionnaire: dict) -> Story:
+    """Render only saved assets under the paid order lock. A replay may have finished first."""
+    if story.status not in PDF_PENDING_STATES:
+        return story
+    try:
+        require_complete_images(story.images_urls)
+        pdf_url = generate_pdf(
+            title=story.title, story_text=story.story_text, image_urls=story.images_urls,
+            episode_number=story.episode_number, child_name=questionnaire['child_name'],
+            next_hook=story.next_hook or '', gender=questionnaire['gender'],
+        )
+        require_complete_pdf(pdf_url)
+    except Exception:
+        # One further render after an observed failure. A process interruption
+        # leaves the last committed stage intact and never restarts paid models.
+        story.status = 'pdf_retry' if story.status == 'pdf_pending' else 'failed'
+        story.error_message = 'PDF assembly failed'
+        db.commit()
+        raise
+    story.pdf_url = pdf_url
+    story.status = 'ready'
+    story.error_message = None
+    db.commit()
+    db.refresh(story)
+    return story
+
+
 def generate_story(db: Session, payload: dict) -> Story:
+    if payload.get('resume_pdf_only') and not payload.get('order_id'):
+        raise ValueError('A saved paid order is required for PDF recovery')
     _serialize_paid_generation(db, payload)
     user = get_or_create_user(db, payload['external_user_id'], payload.get('channel', 'telegram'))
-    child = get_or_create_child(db, payload, user.id)
 
     # Every production generation requires a paid order. Telegram payment IDs
     # are trusted only through the authenticated internal bot-to-backend channel.
@@ -149,13 +185,18 @@ def generate_story(db: Session, payload: dict) -> Story:
     charge_id = payload.get('telegram_payment_charge_id')
     if not order_id and not charge_id:
         raise ValueError('Paid order is required before story generation')
-    if not order_id and charge_id:
+    existing_payment = None
+    if not order_id:
         existing_payment = db.scalar(
             select(Order).where(
                 Order.provider == 'telegram_stars',
                 Order.provider_payment_id == charge_id,
             )
         )
+    child = get_or_create_child(
+        db, payload, user.id, existing_only=bool(order_id or existing_payment is not None),
+    )
+    if not order_id:
         if existing_payment is not None:
             if existing_payment.user_id != user.id or existing_payment.child_id != child.id:
                 raise ValueError('Payment belongs to another user or child')
@@ -190,17 +231,18 @@ def generate_story(db: Session, payload: dict) -> Story:
     # Commit the paid receipt before expensive provider requests. Recheck ownership
     # after the transaction boundary while holding the paid-order lock.
     questionnaire = _paid_questionnaire(paid_order, child, payload)
-    paid_order = _checkpoint_paid_order(db, payload, order_id)
-    if paid_order.user_id != user.id or paid_order.child_id != child.id:
-        raise ValueError("Order does not belong to this user and child")
-    if charge_id and paid_order.provider_payment_id != charge_id:
-        raise ValueError("Payment ID does not match order")
+    user_id, child_id = user.id, child.id
+    _checkpoint_paid_order(db, payload, order_id, user_id, child_id)
 
     # A paid order is an idempotency key: never create a second story for it.
-    # A failed existing story needs a separate explicit retry/recovery flow.
-    story_for_order = db.scalar(select(Story).where(Story.order_id == order_id))
+    story_for_order = db.scalar(select(Story).where(Story.order_id == order_id)
+                                .execution_options(populate_existing=True))
     if story_for_order is not None:
-        return story_for_order
+        if story_for_order.child_id != child_id:
+            raise ValueError('Saved story does not belong to this paid child')
+        return _finish_paid_pdf(db, story_for_order, questionnaire)
+    if payload.get('resume_pdf_only'):
+        raise ValueError('Saved PDF inputs are unavailable')
 
     max_episode = db.scalar(select(func.max(Story.episode_number)).where(Story.child_id == child.id)) or 0
     if get_settings().force_episode_one:
@@ -276,35 +318,25 @@ def generate_story(db: Session, payload: dict) -> Story:
 
         require_complete_images(images_urls)
 
-        pdf_url = generate_pdf(
-            title=text_payload['title'],
-            story_text=text_payload['story_text'],
-            image_urls=images_urls,
-            episode_number=episode_number,
-            child_name=questionnaire['child_name'],
-            next_hook=text_payload.get('next_hook', ''),
-            gender=questionnaire['gender'],
-        )
-
-        require_complete_pdf(pdf_url)
-
         story.title = text_payload['title']
         story.story_text = text_payload['story_text']
         story.recap = text_payload.get('recap', [])
         story.memory = text_payload.get('memory', {})
         story.next_hook = text_payload.get('next_hook')
         story.images_urls = images_urls
-        story.pdf_url = pdf_url
-        story.status = 'ready'
-        db.commit()
-        db.refresh(story)
-        return story
+        story.status = 'pdf_pending'
     except Exception as exc:
         story.status = 'failed'
         story.error_message = str(exc)
         db.commit()
         db.refresh(story)
         raise
+
+    # Commit complete inputs before rendering. Competing replays serialize on
+    # the same order. Refresh even if the session keeps objects on commit.
+    _checkpoint_paid_order(db, payload, order_id, user_id, child_id)
+    db.refresh(story)
+    return _finish_paid_pdf(db, story, questionnaire)
 
 
 def list_child_stories(db: Session, child_id: int, limit: int = 10) -> list[Story]:

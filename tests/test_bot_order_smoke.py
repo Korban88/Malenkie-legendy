@@ -37,9 +37,12 @@ from backend.app.models import Order, Story
 
 @pytest.mark.parametrize("db_kind", ["sqlite", "postgresql"])
 @pytest.mark.parametrize("with_photo", [False, True])
-@pytest.mark.parametrize("preview_failure", [False, True])
-@pytest.mark.parametrize("progress_failure", [False, True])
-def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind, with_photo, preview_failure, progress_failure):
+@pytest.mark.parametrize("preview_failure,progress_failure,pdf_failure", [
+    (False, False, False), (False, True, False), (True, False, False),
+    (True, True, False), (False, False, True),
+])
+def test_synthetic_order_through_real_handlers_and_api(
+        tmp_path, monkeypatch, db_kind, with_photo, preview_failure, progress_failure, pdf_failure):
     db_module = importlib.import_module("backend.app.db")
     images_dir = tmp_path / "images"
     stories_dir = tmp_path / "stories"
@@ -236,6 +239,16 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             await storage.close()
             storage = MemoryStorage()
             state = FSMContext(storage=storage, key=StorageKey(bot_id=123456789, chat_id=42, user_id=42))
+            if pdf_failure:
+                with patch.object(story_service, "generate_pdf", side_effect=OSError("synthetic render failure")):
+                    await bot.successful_payment_handler(message, state)
+                message.answer_document.assert_not_awaited()
+                with Session(engine) as observer:
+                    saved = observer.scalar(select(Story))
+                    assert saved.status == "pdf_retry" and saved.pdf_url is None
+                    assert len(saved.images_urls) == 5 and saved.story_text
+                # The source photo can expire between payment and this retry.
+                get_photo.side_effect = RuntimeError("original photo no longer available")
             rejected_progress = []
             if progress_failure:
                 async def reject_progress(text, **kwargs):
@@ -285,6 +298,7 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert message.answer_document.await_count == 2
             assert message.answer_document.await_args.kwargs["document"].data == pdf.data
             assert len(generation_calls) == 1
+            assert len(list(images_dir.glob("*.png"))) == 5
             assert await state.get_state() == bot.Form.name.state
             assert (await state.get_data())["child_name"] == "Новая анкета"
             await storage.close()

@@ -8,6 +8,23 @@ This change saves an invoice in the existing Order table before sending it to Te
 
 A pending form may be replaced without changing the saved invoice. A late paid event for the old invoice is routed before generic form handlers and does not erase the newer form. Duplicate paid events may redeliver the same PDF; they do not intentionally regenerate the book.
 
+### Resume PDF assembly
+
+Once all five distinct image files pass validation, the backend commits the text,
+image references, episode and continuation data on the paid story before starting
+the PDF renderer. A receipt replay for this stage tells the bot to skip the source
+photo. The backend can resume only the same buyer, order and child, using the paid
+questionnaire. A recovery-only call without saved inputs fails before any provider.
+
+One recorded PDF failure permits a further render on a subsequent request. A
+second recorded failure leaves the story failed for repair. A process exit during
+rendering can repeat local assembly. The committed text and image providers are
+not called again. A completed PDF keeps the existing private redelivery path.
+This checkpoint is supported without a schema migration. It requires persistent
+media storage and a backend and bot that both understand the new stage before
+enabling this flow. It does not schedule retries or recover a provider call
+interrupted before the checkpoint.
+
 ## Endpoints
 
 All endpoints inherit the existing internal bot-to-backend authentication. They are not public payment webhooks.

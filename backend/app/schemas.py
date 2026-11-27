@@ -22,6 +22,7 @@ class StoryGenerateRequest(BaseModel):
     hobby: str | None = None
     favorite_place: str | None = None
     telegram_payment_charge_id: str | None = None
+    resume_pdf_only: bool = False
 
 
 class StoryGenerateResponse(BaseModel):

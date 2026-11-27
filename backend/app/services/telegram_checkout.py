@@ -23,6 +23,7 @@ from ..telegram_checkout_schemas import (
     TelegramReceiptCreate,
 )
 from .story_service import (
+    PDF_PENDING_STATES,
     _paid_questionnaire,
     _serialize_paid_generation,
     get_or_create_child,
@@ -195,16 +196,18 @@ def accept_telegram_receipt(db: Session, payload: dict) -> dict:
     })
     # Only the validated paid invoice may identify its ready story.
     # Recovery must not require the original photo or provider work.
-    ready_story_id = db.scalar(select(Story.id).where(
+    saved_story = db.execute(select(Story.id, Story.status).where(
         Story.order_id == order.id,
         Story.child_id == order.child_id,
-        Story.status == 'ready',
-    ))
+        Story.status.in_(('ready', *PDF_PENDING_STATES)),
+    )).one_or_none()
+    if saved_story is not None and saved_story.status in PDF_PENDING_STATES:
+        generation['resume_pdf_only'] = True
     response = {
         'order_id': order.id,
         'child_id': order.child_id,
         'status': 'paid',
-        'ready_story_id': ready_story_id,
+        'ready_story_id': saved_story.id if saved_story is not None and saved_story.status == 'ready' else None,
         'replayed': replayed,
         'generation_payload': generation,
         'photo_file_id': invoice.get('photo_file_id'),

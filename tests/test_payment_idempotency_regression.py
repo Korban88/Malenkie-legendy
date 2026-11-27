@@ -54,7 +54,7 @@ def test_repeat_paid_charge_reuses_order_and_story_without_new_order():
         id=71, provider='telegram_stars', provider_payment_id='tg-charge-1',
         user_id=10, child_id=99, status='paid',
     )
-    story = SimpleNamespace(id=881, order_id=71, child_id=99)
+    story = SimpleNamespace(id=881, order_id=71, child_id=99, status='ready')
     db = FakeSession(scalar_results=[order, order, story], order=order)
 
     with patch.object(story_service, 'get_or_create_user', return_value=user), \
