@@ -23,6 +23,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import SendMessage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -35,7 +37,8 @@ from backend.app.models import Order, Story
 
 @pytest.mark.parametrize("db_kind", ["sqlite", "postgresql"])
 @pytest.mark.parametrize("with_photo", [False, True])
-def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind, with_photo):
+@pytest.mark.parametrize("preview_failure", [False, True])
+def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind, with_photo, preview_failure):
     db_module = importlib.import_module("backend.app.db")
     images_dir = tmp_path / "images"
     stories_dir = tmp_path / "stories"
@@ -250,7 +253,20 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert get_photo.await_count == int(with_photo)
             assert download_photo.await_count == int(with_photo)
             get_photo.side_effect = RuntimeError("original photo no longer available")
+            rejected_previews = []
+            if preview_failure:
+                async def reject_preview(text, **kwargs):
+                    if "Лена увидела свет" in text:
+                        rejected_previews.append(True)
+                        raise TelegramBadRequest(
+                            method=SendMessage(chat_id=42, text="synthetic preview"),
+                            message="synthetic Telegram preview rejection",
+                        )
+                message.answer.side_effect = reject_preview
             await bot.successful_payment_handler(message, state)
+            assert len(rejected_previews) == int(preview_failure)
+            if preview_failure:
+                assert "Предпросмотр в чате мог быть неполным" in message.answer.await_args.args[0]
             assert get_photo.await_count == int(with_photo)
             assert download_photo.await_count == int(with_photo)
             assert message.answer_document.await_count == 2
