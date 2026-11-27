@@ -828,8 +828,8 @@ def _template_fallback(payload: dict) -> dict:
         image_prompts = [
             f'book cover: {animal} and the child beside a sleeping guardian in {place}, '
             f'one quiet moment framed by the wooden bridge, no lettering',
-            f'running through the magical {place} at dawn, {animal} leaping alongside, '
-            f'golden light filtering through, wide establishing shot, sense of adventure beginning',
+            f'meeting the talking {animal} beside a broad tree in {place} in the morning, '
+            f'the child has stopped to listen, warm light filtering through the branches',
             f'crossing a wooden bridge in {place} in total silence, moving carefully, '
             f'{animal} following closely, atmospheric mist below, wide shot',
             f'sitting opposite a wise old man in a cosy small house, {animal} nearby, '
