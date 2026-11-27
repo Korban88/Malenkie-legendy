@@ -104,7 +104,11 @@ def test_two_simultaneous_requests_create_one_paid_order_and_one_story(postgres,
         ["synthetic-image-" + str(i) for i in range(5)], None
     ))
     monkeypatch.setattr(story_service, "require_complete_images", lambda _: None)
-    monkeypatch.setattr(story_service, "generate_pdf", lambda **kw: "synthetic-pdf")
+    pdf_renders = []
+    def synthetic_pdf(**kwargs):
+        pdf_renders.append(kwargs['title'])
+        return "synthetic-pdf"
+    monkeypatch.setattr(story_service, "generate_pdf", synthetic_pdf)
     monkeypatch.setattr(story_service, "require_complete_pdf", lambda _: None)
 
     def worker():
@@ -120,6 +124,7 @@ def test_two_simultaneous_requests_create_one_paid_order_and_one_story(postgres,
     assert first == second
     assert first[2] == "ready"
     assert calls == ["provider-called"]
+    assert pdf_renders == ["Синтетическая проверка"]
     with Session(postgres) as session:
         for model in (User, Child, Order, Story):
             assert session.scalar(select(func.count()).select_from(model)) == 1

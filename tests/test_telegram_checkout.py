@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.db import Base
 from backend.app.models import Child, Order, Story, User
+from backend.app.services import story_service
 from backend.app.services.telegram_checkout import (
     accept_telegram_receipt,
     check_telegram_invoice,
@@ -60,6 +61,49 @@ def checkout_engine(tmp_path):
     finally:
         engine.dispose()
         deregister(JSONB)
+
+
+def test_pdf_only_replay_never_starts_providers_or_exceeds_retry_limit(checkout_engine, monkeypatch):
+    text_provider = Mock(side_effect=AssertionError('paid text must not run'))
+    image_provider = Mock(side_effect=AssertionError('paid image provider must not run'))
+    render = Mock(side_effect=OSError('synthetic PDF failure'))
+    monkeypatch.setattr(story_service, 'generate_story_payload', text_provider)
+    monkeypatch.setattr(story_service, 'generate_images', image_provider)
+    monkeypatch.setattr(story_service, 'generate_pdf', render)
+    monkeypatch.setattr(story_service, 'require_complete_images', lambda images: None)
+    with Session(checkout_engine) as db:
+        invoice = create_telegram_invoice(db, questionnaire())
+        request = payment(invoice, telegram_payment_charge_id='synthetic-pdf-recovery')
+        receipt = accept_telegram_receipt(db, request)
+        generation = {**receipt['generation_payload'], 'resume_pdf_only': True}
+        with pytest.raises(ValueError, match='Saved PDF inputs'):
+            story_service.generate_story(db, generation)
+        assert db.scalar(select(func.count()).select_from(Story)) == 0
+        db.add(Story(child_id=receipt['child_id'], order_id=receipt['order_id'],
+                     episode_number=1, status='pdf_pending', title='Synthetic',
+                     story_text='Synthetic chapter', images_urls=['fixture'] * 5))
+        db.commit()
+        second = create_telegram_invoice(db, questionnaire(
+            client_request_id='b' * 32, child_id=receipt['child_id'], favorite_animal='ёж',
+        ))
+
+    for next_status in ('pdf_retry', 'failed'):
+        with Session(checkout_engine) as db:
+            saved = accept_telegram_receipt(db, request)['generation_payload']
+            assert saved['resume_pdf_only'] is True
+            with pytest.raises(OSError, match='synthetic PDF failure'):
+                story_service.generate_story(db, saved)
+        with Session(checkout_engine) as observer:
+            story = observer.scalar(select(Story))
+            assert story.status == next_status and story.pdf_url is None
+    with Session(checkout_engine) as db:
+        assert story_service.generate_story(db, generation).status == 'failed'
+        assert db.scalar(select(func.count()).select_from(Story)) == 1
+        assert db.get(Child, receipt['child_id']).favorite_animal == 'ёж'
+        assert db.get(Order, second['order_id']).meta['questionnaire_v1']['favorite_animal'] == 'ёж'
+    assert render.call_count == 2
+    text_provider.assert_not_called()
+    image_provider.assert_not_called()
 
 
 def test_invoice_and_paid_snapshot_survive_new_sessions(checkout_engine):

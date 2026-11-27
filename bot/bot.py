@@ -803,7 +803,8 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
     photo_enabled   = data.get("photo_enabled", False)
     photo_consent   = data.get("photo_consent", False)
     charge_id       = data.get("telegram_payment_charge_id")
-    if photo_enabled:
+    resume_pdf_only = data.get("resume_pdf_only") is True
+    if photo_enabled and not resume_pdf_only:
         if not photo_consent or not photo_file_id:
             await trigger_message.answer(
                 "Платёж сохранён, но согласованное фото недоступно. "
@@ -872,6 +873,8 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
     }
     if photo_b64:
         payload["photo_base64"] = photo_b64
+    if resume_pdf_only:
+        payload["resume_pdf_only"] = True
     if charge_id:
         payload["telegram_payment_charge_id"] = charge_id
 

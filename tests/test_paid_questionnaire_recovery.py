@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles, deregister
@@ -18,7 +19,8 @@ from backend.app.models import Child, Order, Story
 from backend.app.services import story_service
 
 
-def test_killed_generation_retains_paid_questionnaire_and_recovery_uses_it(tmp_path, monkeypatch):
+@pytest.mark.parametrize('crash_stage', ['text', 'pdf'])
+def test_killed_generation_retains_paid_questionnaire_and_recovery_uses_it(tmp_path, monkeypatch, crash_stage):
     @compiles(JSONB, 'sqlite')
     def jsonb(type_, compiler, **kw):
         return 'JSON'
@@ -41,13 +43,19 @@ from sqlalchemy.ext.compiler import compiles
 from backend.app.services import story_service
 @compiles(JSONB,'sqlite')
 def jsonb(t,c,**kw): return 'JSON'
-def crash(_): os._exit(17)
-story_service.generate_story_payload=crash
+def crash(*args, **kwargs): os._exit(17)
+if sys.argv[3] == 'text':
+    story_service.generate_story_payload = crash
+else:
+    story_service.generate_story_payload = lambda data: {'title': 'Saved title', 'story_text': 'Saved text'}
+    story_service.generate_images = lambda **kw: (['fixture'] * 5, None)
+    story_service.require_complete_images = lambda _: None
+    story_service.generate_pdf = crash
 with Session(create_engine(sys.argv[1])) as db:
     story_service.generate_story(db,json.loads(sys.argv[2]))
 '''
         env = dict(os.environ, OPENROUTER_API_KEY='', OPENAI_API_KEY='', TOGETHER_API_KEY='')
-        result = subprocess.run([sys.executable,'-c',script,dsn,json.dumps(payload)],
+        result = subprocess.run([sys.executable,'-c',script,dsn,json.dumps(payload),crash_stage],
                                 cwd=Path(__file__).resolve().parents[1],env=env,
                                 capture_output=True,text=True,timeout=20)
         assert result.returncode == 17, result.stderr
@@ -59,7 +67,12 @@ with Session(create_engine(sys.argv[1])) as db:
             assert snapshot['purpose'] == 'friendship'
             assert 'photo_base64' not in snapshot
             assert 'SYNTHETIC_DATA_MUST_NOT_PERSIST' not in json.dumps(receipt.meta)
-            assert db.scalar(select(func.count()).select_from(Story)) == 0
+            saved_story = db.scalar(select(Story))
+            if crash_stage == 'pdf':
+                assert saved_story.status == 'pdf_pending' and saved_story.images_urls == ['fixture'] * 5
+                assert saved_story.story_text == 'Saved text' and saved_story.pdf_url is None
+            else:
+                assert saved_story is None
             child = db.get(Child,receipt.child_id)
             child.favorite_animal = 'тигр'
             db.commit()
@@ -85,10 +98,14 @@ with Session(create_engine(sys.argv[1])) as db:
             assert restarted.scalar(select(func.count()).select_from(Order)) == 1
             assert restarted.scalar(select(func.count()).select_from(Story)) == 1
             assert restarted.get(Order,order_id).meta['questionnaire_v1'] == snapshot
-        assert len(calls) == 1
-        assert calls[0]['favorite_animal'] == 'лиса'
-        assert calls[0]['purpose'] == 'friendship'
-        assert calls[0]['image_style'] == 'watercolor'
+            assert restarted.get(Child,child_id).favorite_animal == 'тигр'
+        if crash_stage == 'pdf':
+            assert calls == []
+        else:
+            assert len(calls) == 1
+            assert calls[0]['favorite_animal'] == 'лиса'
+            assert calls[0]['purpose'] == 'friendship'
+            assert calls[0]['image_style'] == 'watercolor'
     finally:
         engine.dispose()
         deregister(JSONB)
