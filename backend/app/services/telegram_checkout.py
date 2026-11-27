@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..models import Order, User
+from ..models import Order, Story, User
 from ..money import Money
 from ..telegram_checkout_schemas import (
     TelegramCheckoutCheck,
@@ -193,10 +193,18 @@ def accept_telegram_receipt(db: Session, payload: dict) -> dict:
         'order_id': order.id,
         'telegram_payment_charge_id': charge,
     })
+    # Only the validated paid invoice may identify its ready story.
+    # Recovery must not require the original photo or provider work.
+    ready_story_id = db.scalar(select(Story.id).where(
+        Story.order_id == order.id,
+        Story.child_id == order.child_id,
+        Story.status == 'ready',
+    ))
     response = {
         'order_id': order.id,
         'child_id': order.child_id,
         'status': 'paid',
+        'ready_story_id': ready_story_id,
         'replayed': replayed,
         'generation_payload': generation,
         'photo_file_id': invoice.get('photo_file_id'),
