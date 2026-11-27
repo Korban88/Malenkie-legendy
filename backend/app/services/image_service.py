@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
+from ..book_release import EXPECTED_IMAGES, require_illustration_prompts
 from ..config import get_settings
 from ..private_media import sign_cover_reference
 
@@ -316,7 +317,9 @@ def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'wa
 
 
 def generate_images(child_name, age, style, photo_base64, char_desc='',
-                    scene_prompts=None, count=4, image_style='watercolor'):
+                    scene_prompts=None, count=EXPECTED_IMAGES, image_style='watercolor'):
+    if count == EXPECTED_IMAGES:
+        require_illustration_prompts(scene_prompts)
     urls: list[str | None] = [None] * count   # fixed-size: indices preserved even on failure
     photo_hash = None
     out_dir = Path(settings.images_dir)

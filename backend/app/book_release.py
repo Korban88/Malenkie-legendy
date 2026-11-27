@@ -12,6 +12,13 @@ from .private_media import locate_media
 EXPECTED_IMAGES = 5
 
 
+def require_illustration_prompts(prompts: object) -> None:
+    if not isinstance(prompts, list) or len(prompts) != EXPECTED_IMAGES:
+        raise ValueError("Five illustration prompts are required: one cover and four chapter scenes")
+    if any(not isinstance(scene, str) or not scene.strip() for scene in prompts):
+        raise ValueError("All illustration prompts must be nonempty text")
+
+
 def _filename(locator: str, kind: str) -> str:
     if not isinstance(locator, str):
         raise ValueError("Missing media locator")
