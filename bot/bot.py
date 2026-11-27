@@ -905,11 +905,12 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
 async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
                                   data: dict, result: dict):
     child_name = data.get("child_name", "Герой")
+    illustrations = result.get("images_urls")
     # Do not deliver a failed/incomplete paid order, including legacy records.
     if (result.get("status") != "ready" or not result.get("pdf_url")
             or not result.get("story_text")
-            or len(result.get("images_urls") or []) != 5
-            or not all(result.get("images_urls") or [])):
+            or not isinstance(illustrations, list) or len(illustrations) != 5
+            or not all(isinstance(url, str) and url.strip() for url in illustrations)):
         await trigger_message.answer(
             "Оплата получена, но полная иллюстрированная книга пока не готова. "
             "Повторно платить не нужно. Заказ требует восстановления."
@@ -918,9 +919,7 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
 
     story_text  = result.get("story_text", "")
     pdf_url     = result.get("pdf_url")
-    raw_urls    = result.get("images_urls") or []
-    # Pad to 6 slots so positional indexing is always safe (None = image failed)
-    images_urls: list[str | None] = list(raw_urls) + [None] * max(0, 6 - len(raw_urls))
+    cover_url, *chapter_urls = illustrations
     episode     = result.get("episode_number", 1)
     title       = result.get("title", "")
     next_hook   = result.get("next_hook")
@@ -955,17 +954,14 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
             chapters.append((current_title, '\n\n'.join(current_paras)))
 
         # ── Обложка: images[0] с названием сказки ────────────────────────────
-        if images_urls[0]:
-            if not await _send_image(trigger_message, images_urls[0], caption=f"📖 {title}"):
-                preview_complete = False
+        if not await _send_image(trigger_message, cover_url, caption=f"📖 {title}"):
+            preview_complete = False
 
         # ── Главы: картинка → текст (images[1-4] для первых 4 глав) ──────────
         for ch_idx, (ch_title, ch_text) in enumerate(chapters):
-            img_idx = ch_idx + 1  # [1],[2],[3],[4] → главы 0,1,2,3
-            ch_url = images_urls[img_idx] if 1 <= img_idx <= 4 else None
-            if ch_url:
+            if ch_idx < len(chapter_urls):
                 caption = ch_title if ch_title else f"Глава {ch_idx + 1}"
-                if not await _send_image(trigger_message, ch_url, caption=caption):
+                if not await _send_image(trigger_message, chapter_urls[ch_idx], caption=caption):
                     preview_complete = False
 
             full_chapter = (ch_title + '\n\n' + ch_text).strip() if ch_title else ch_text
@@ -976,10 +972,6 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
         if next_hook:
             await trigger_message.answer(f"💫 _{next_hook}_", parse_mode="Markdown")
 
-        # ── Финальная иллюстрация: images[5] ─────────────────────────────────
-        if images_urls[5]:
-            if not await _send_image(trigger_message, images_urls[5], caption="🏆 Финал"):
-                preview_complete = False
     except TelegramAPIError:
         preview_complete = False
 

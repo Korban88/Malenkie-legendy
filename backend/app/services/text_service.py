@@ -5,6 +5,7 @@ import re
 
 import httpx
 
+from ..book_release import require_illustration_prompts
 from ..config import get_settings
 
 settings = get_settings()
@@ -435,7 +436,8 @@ def _prompt(payload: dict, archetype: dict | None = None) -> str:
         'Ты мастер детской литературы мирового уровня. '
         'Твоя задача — написать персональную сказку, неотличимую от работы живого писателя.\n\n'
         'Верни СТРОГО JSON без markdown-обёртки:\n'
-        '{"title":"...","story_text":"...","image_prompts":["...x4"],'
+        '{"title":"...","story_text":"...",'
+        '"image_prompts":["cover","chapter 1 scene","chapter 2 scene","chapter 3 scene","chapter 4 scene"],'
         '"recap":["..."],'
         '"memory":{"world_name":"...","world_state":{"locations":[],"artifacts":[],"resolved":[]},'
         '"character_traits":{"courage":"...","kindness":"...","special_power":"..."},'
@@ -992,6 +994,7 @@ def generate_story_payload(payload: dict) -> dict:
     else:
         raise ValueError(f'Unsupported text provider: {provider}')
 
+    require_illustration_prompts(result.get('image_prompts'))
     story = _strip_english_style_words(result['story_text'])
     story = _strip_all_english_words(story)
     story = _fix_common_grammar(story)

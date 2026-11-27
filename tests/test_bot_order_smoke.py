@@ -257,6 +257,11 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert "Лена" in "\n".join(page.extract_text() or "" for page in reader.pages)
             assert await state.get_state() is None
             assert message.answer_photo.await_count == 5
+            captions = [call.kwargs["caption"] for call in message.answer_photo.await_args_list]
+            assert captions[0].endswith("ТЕСТ: Лена и свет")
+            assert captions[1:] == [
+                "Глава 1. Находка", "Глава 2. Друг", "Глава 3. Фонарь", "Глава 4. Домой",
+            ]
 
             # A replay returns the SAME document from the saved paid order.
             # Redelivery is at-least-once; it must not re-run paid generation.
