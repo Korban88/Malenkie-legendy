@@ -937,34 +937,27 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
             )
 
         # ── Разбиваем текст на главы ──────────────────────────────────────────
-        paragraphs = [p.strip() for p in story_text.split('\n\n') if p.strip()]
-        chapters: list[tuple[str, str]] = []
-        current_title = ''
-        current_paras: list[str] = []
-
-        for para in paragraphs:
-            if para.startswith('Глава'):
-                if current_title or current_paras:
-                    chapters.append((current_title, '\n\n'.join(current_paras)))
-                current_title = para
-                current_paras = []
-            else:
-                current_paras.append(para)
-        if current_title or current_paras:
-            chapters.append((current_title, '\n\n'.join(current_paras)))
-
         # ── Обложка: images[0] с названием сказки ────────────────────────────
         if not await _send_image(trigger_message, cover_url, caption=f"📖 {title}"):
             preview_complete = False
 
         # ── Главы: картинка → текст (images[1-4] для первых 4 глав) ──────────
-        for ch_idx, (ch_title, ch_text) in enumerate(chapters):
-            if ch_idx < len(chapter_urls):
-                caption = ch_title if ch_title else f"Глава {ch_idx + 1}"
-                if not await _send_image(trigger_message, chapter_urls[ch_idx], caption=caption):
+        # A legacy ready book may have a preface or mixed line endings. Its
+        # text is still delivered in full; only a numbered heading uses a scene.
+        text = story_text.replace('\r\n', '\n').replace('\r', '\n').strip()
+        parts = re.split(
+            r"^[ \t]*(Глава[ \t]+(?:\d+|[IVXLCDM]+|первая|вторая|третья|четв[её]ртая|"
+            r"пятая|шестая|седьмая|восьмая|девятая|десятая)\b[^\n]*)$",
+            text, flags=re.MULTILINE | re.IGNORECASE,
+        )
+        scenes = iter(chapter_urls)
+        for ch_title, ch_text in zip(["", *parts[1::2]], parts[::2]):
+            scene = next(scenes, None) if ch_title else None
+            if scene:
+                if not await _send_image(trigger_message, scene, caption=ch_title.strip()[:1024]):
                     preview_complete = False
 
-            full_chapter = (ch_title + '\n\n' + ch_text).strip() if ch_title else ch_text
+            full_chapter = (ch_title.strip() + '\n\n' + ch_text.strip()).strip()
             for i in range(0, len(full_chapter), 4000):
                 await trigger_message.answer(full_chapter[i:i + 4000])
 

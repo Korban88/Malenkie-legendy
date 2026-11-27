@@ -121,7 +121,8 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             ]
             return {
                 "title": "ТЕСТ: Лена и свет",
-                "story_text": "\n\n".join(a + "\n\n" + b for a, b in paragraphs),
+                "story_text": "До рассвета было тихо.\r\n\r\n"
+                              + "\r\n\r\n".join(a + "\r\n" + b for a, b in paragraphs),
                 "image_prompts": ["test only"] * 5,
                 "recap": [], "memory": {}, "next_hook": "",
             }
@@ -255,6 +256,8 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert len(reader.pages) >= 5
             assert sum(len(page.images) for page in reader.pages) >= 5
             assert "Лена" in "\n".join(page.extract_text() or "" for page in reader.pages)
+            preface = next(page for page in reader.pages if "До рассвета" in (page.extract_text() or ""))
+            assert len(preface.images) == 0
             assert await state.get_state() is None
             assert message.answer_photo.await_count == 5
             captions = [call.kwargs["caption"] for call in message.answer_photo.await_args_list]

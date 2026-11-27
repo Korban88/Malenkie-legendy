@@ -7,6 +7,7 @@ from pathlib import Path
 from fpdf import FPDF
 
 from ..config import get_settings
+from ..story_structure import story_sections
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -316,12 +317,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         # [3] = scene for chapter 3
         # [4] = scene for chapter 4 (climax / finale)
         # 4 chapters, each gets its own illustration.
-        def _img(idx: int) -> Path | None:
-            return local_images[idx] if idx < len(local_images) else None
-
-        cover_img = _img(0)
-        # Map story chapter index (0-based) → illustration index in local_images
-        _CHAPTER_IMG_MAP = {0: 1, 1: 2, 2: 3, 3: 4}
+        cover_img = local_images[0] if local_images else None
 
         rr, rg, rb = C['RHD']
         ar, ag, ab = C['ACC']
@@ -407,25 +403,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         pdf.multi_cell(CONTENT_W, 5, '◆  Маленькие легенды  ◆', align='C', new_x='LMARGIN', new_y='NEXT')
 
         # ── Parse story into chapters ─────────────────────────────────────────
-        _para_sep = '\n\n' if '\n\n' in story_text else '\n'
-        paragraphs = [p.strip() for p in story_text.split(_para_sep) if p.strip()]
-        chapters: list[tuple[str, list[str]]] = []
-        current_chapter_title = ''
-        current_paras: list[str] = []
-
-        for para in paragraphs:
-            if para.startswith('Глава'):
-                if current_chapter_title or current_paras:
-                    chapters.append((current_chapter_title, current_paras))
-                # If LLM put the first paragraph on the same line as chapter title
-                # (separated by \n, not \n\n), split them: title = first line only.
-                title_lines = para.split('\n')
-                current_chapter_title = title_lines[0].strip()
-                current_paras = [ln.strip() for ln in title_lines[1:] if ln.strip()]
-            else:
-                current_paras.append(para)
-        if current_chapter_title or current_paras:
-            chapters.append((current_chapter_title, current_paras))
+        chapters = story_sections(story_text)
 
         page_num = 1
 
@@ -444,7 +422,8 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         def space_left() -> float:
             return content_bottom() - pdf.get_y()
 
-        for ch_idx, (chapter_title, paras) in enumerate(chapters):
+        chapter_images = iter(local_images[1:5])
+        for chapter_title, paras in chapters:
             new_story_page()
 
             # Chapter header — visually distinct: larger, bolder, framed with rules
@@ -470,8 +449,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
                 _body_font()  # reset font to body size after chapter heading
 
             # ── Chapter illustration: placed right after header, before text ──
-            # Images appear in chapters 1, 3, 5 (0-based: 0, 2, 4) for even book-layout spread.
-            ch_img = _img(_CHAPTER_IMG_MAP[ch_idx]) if ch_idx in _CHAPTER_IMG_MAP else None
+            ch_img = next(chapter_images, None) if chapter_title else None
             if ch_img:
                 img_h = _get_img_display_h(ch_img, IMG_W)
                 needed = img_h + 16  # image + frame padding + gap
