@@ -99,7 +99,10 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
 
         monkeypatch.setitem(main.app.dependency_overrides, db_module.get_db, isolated_db)
 
+        generation_calls = []
+
         def fake_text(payload):
+            generation_calls.append(payload)
             assert payload["child_name"] == "Лена"
             assert payload["age"] == 7
             assert payload["favorite_animal"] == "лиса"
@@ -182,6 +185,21 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert invoice["currency"] == "XTR"
             assert invoice["prices"][0].amount == 150
 
+            # The invoice exists in a new DB session BEFORE Telegram payment.
+            with Session(engine) as observer:
+                unpaid = observer.scalar(select(Order))
+                assert unpaid.status == "created"
+                assert unpaid.provider_payment_id is None
+                assert unpaid.meta["questionnaire_v1"]["child_name"] == "Лена"
+                assert observer.scalar(select(func.count()).select_from(Story)) == 0
+
+            # A fresh MemoryStorage models loss of every conversational field.
+            # Checkout must still use the committed invoice and original price.
+            await storage.close()
+            storage = MemoryStorage()
+            state = FSMContext(storage=storage, key=StorageKey(bot_id=123456789, chat_id=42, user_id=42))
+            assert not await state.get_data()
+
             checkout = SimpleNamespace(
                 invoice_payload=invoice["payload"], total_amount=150,
                 currency="XTR", from_user=message.from_user, answer=AsyncMock(),
@@ -196,6 +214,11 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
                 invoice_payload=invoice["payload"], total_amount=150,
                 currency="XTR", telegram_payment_charge_id="synthetic-charge-001",
             )
+            # A second memory loss between checkout approval and receipt must
+            # not lose the paid order, either.
+            await storage.close()
+            storage = MemoryStorage()
+            state = FSMContext(storage=storage, key=StorageKey(bot_id=123456789, chat_id=42, user_id=42))
             await bot.successful_payment_handler(message, state)
             message.answer_document.assert_awaited_once()
             pdf = message.answer_document.await_args.kwargs["document"]
@@ -206,9 +229,17 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             assert await state.get_state() is None
             assert message.answer_photo.await_count == 5
 
-            # Payment replay after delivery must not create a second book.
+            # A replay returns the SAME document from the saved paid order.
+            # Redelivery is at-least-once; it must not re-run paid generation.
+            # A newer questionnaire must remain untouched by an old payment.
+            await state.set_state(bot.Form.name)
+            await state.update_data(child_name="Новая анкета")
             await bot.successful_payment_handler(message, state)
-            assert message.answer_document.await_count == 1
+            assert message.answer_document.await_count == 2
+            assert message.answer_document.await_args.kwargs["document"].data == pdf.data
+            assert len(generation_calls) == 1
+            assert await state.get_state() == bot.Form.name.state
+            assert (await state.get_data())["child_name"] == "Новая анкета"
             await storage.close()
             await bot.bot.session.close()
 
