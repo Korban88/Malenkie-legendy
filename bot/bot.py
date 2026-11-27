@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 import httpx
 from aiogram import Bot, Dispatcher, F
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -914,53 +915,63 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
     title       = result.get("title", "")
     next_hook   = result.get("next_hook")
 
-    if episode > 1:
-        await trigger_message.answer(
-            f"📚 *Эпизод {episode}: продолжение приключений {_genitive(child_name)}!*\n\n"
-            "История продолжается с того места, где остановилась...",
-            parse_mode="Markdown",
-        )
+    # The paid PDF is the primary deliverable. Telegram may reject an optional
+    # preview message (for example malformed generated Markdown) or photo.
+    # Such a failure must not prevent the existing PDF from being delivered.
+    preview_complete = True
+    try:
+        if episode > 1:
+            await trigger_message.answer(
+                f"📚 *Эпизод {episode}: продолжение приключений {_genitive(child_name)}!*\n\n"
+                "История продолжается с того места, где остановилась...",
+                parse_mode="Markdown",
+            )
 
-    # ── Разбиваем текст на главы ──────────────────────────────────────────
-    paragraphs = [p.strip() for p in story_text.split('\n\n') if p.strip()]
-    chapters: list[tuple[str, str]] = []
-    current_title = ''
-    current_paras: list[str] = []
+        # ── Разбиваем текст на главы ──────────────────────────────────────────
+        paragraphs = [p.strip() for p in story_text.split('\n\n') if p.strip()]
+        chapters: list[tuple[str, str]] = []
+        current_title = ''
+        current_paras: list[str] = []
 
-    for para in paragraphs:
-        if para.startswith('Глава'):
-            if current_title or current_paras:
-                chapters.append((current_title, '\n\n'.join(current_paras)))
-            current_title = para
-            current_paras = []
-        else:
-            current_paras.append(para)
-    if current_title or current_paras:
-        chapters.append((current_title, '\n\n'.join(current_paras)))
+        for para in paragraphs:
+            if para.startswith('Глава'):
+                if current_title or current_paras:
+                    chapters.append((current_title, '\n\n'.join(current_paras)))
+                current_title = para
+                current_paras = []
+            else:
+                current_paras.append(para)
+        if current_title or current_paras:
+            chapters.append((current_title, '\n\n'.join(current_paras)))
 
-    # ── Обложка: images[0] с названием сказки ────────────────────────────
-    if images_urls[0]:
-        await _send_image(trigger_message, images_urls[0], caption=f"📖 {title}")
+        # ── Обложка: images[0] с названием сказки ────────────────────────────
+        if images_urls[0]:
+            if not await _send_image(trigger_message, images_urls[0], caption=f"📖 {title}"):
+                preview_complete = False
 
-    # ── Главы: картинка → текст (images[1-4] для первых 4 глав) ──────────
-    for ch_idx, (ch_title, ch_text) in enumerate(chapters):
-        img_idx = ch_idx + 1  # [1],[2],[3],[4] → главы 0,1,2,3
-        ch_url = images_urls[img_idx] if 1 <= img_idx <= 4 else None
-        if ch_url:
-            caption = ch_title if ch_title else f"Глава {ch_idx + 1}"
-            await _send_image(trigger_message, ch_url, caption=caption)
+        # ── Главы: картинка → текст (images[1-4] для первых 4 глав) ──────────
+        for ch_idx, (ch_title, ch_text) in enumerate(chapters):
+            img_idx = ch_idx + 1  # [1],[2],[3],[4] → главы 0,1,2,3
+            ch_url = images_urls[img_idx] if 1 <= img_idx <= 4 else None
+            if ch_url:
+                caption = ch_title if ch_title else f"Глава {ch_idx + 1}"
+                if not await _send_image(trigger_message, ch_url, caption=caption):
+                    preview_complete = False
 
-        full_chapter = (ch_title + '\n\n' + ch_text).strip() if ch_title else ch_text
-        for i in range(0, len(full_chapter), 4000):
-            await trigger_message.answer(full_chapter[i:i + 4000])
+            full_chapter = (ch_title + '\n\n' + ch_text).strip() if ch_title else ch_text
+            for i in range(0, len(full_chapter), 4000):
+                await trigger_message.answer(full_chapter[i:i + 4000])
 
-    # ── Анонс следующей серии ─────────────────────────────────────────────
-    if next_hook:
-        await trigger_message.answer(f"💫 _{next_hook}_", parse_mode="Markdown")
+        # ── Анонс следующей серии ─────────────────────────────────────────────
+        if next_hook:
+            await trigger_message.answer(f"💫 _{next_hook}_", parse_mode="Markdown")
 
-    # ── Финальная иллюстрация: images[5] ─────────────────────────────────
-    if images_urls[5]:
-        await _send_image(trigger_message, images_urls[5], caption="🏆 Финал")
+        # ── Финальная иллюстрация: images[5] ─────────────────────────────────
+        if images_urls[5]:
+            if not await _send_image(trigger_message, images_urls[5], caption="🏆 Финал"):
+                preview_complete = False
+    except TelegramAPIError:
+        preview_complete = False
 
     # ── PDF и кнопки: private authenticated delivery ────────────────────
     if not pdf_url or not await _send_pdf(trigger_message, pdf_url, episode):
@@ -971,8 +982,11 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
             "Повторно платить не нужно: заказ требует восстановления."
         )
         return
+    confirmation = "Сказка доставлена документом выше. Его можно открыть повторно в этом чате."
+    if not preview_complete:
+        confirmation += " Предпросмотр в чате мог быть неполным; полная книга находится в PDF."
     await trigger_message.answer(
-        "Сказка доставлена документом выше. Его можно открыть повторно в этом чате.",
+        confirmation,
         reply_markup=kb_after_story(None, episode, child_name),
     )
     # A late payment for an old invoice must not erase a newer questionnaire.
