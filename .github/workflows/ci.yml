@@ -48,7 +48,7 @@ jobs:
       - name: Syntax compile
         run: python -m compileall -q backend bot tests
       - name: Unit and service regression tests
-        run: python -m pytest -q tests/test_private_media_access.py tests/test_asgi_privacy_integration.py tests/test_payment_idempotency_regression.py tests/test_book_release.py tests/test_bot_order_smoke.py tests/test_postgres_payment_recovery.py tests/test_paid_questionnaire_recovery.py tests/test_money.py
+        run: python -m pytest -q
       - name: Generate and verify synthetic illustrated book through real PDF renderer
         run: python tests/e2e_pdf_smoke.py --out "${{ runner.temp }}/legendkids-synthetic"
       - name: Attach synthetic proof (no customer data)

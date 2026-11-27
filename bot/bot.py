@@ -260,6 +260,112 @@ def kb_after_story(pdf_url: str | None, episode: int, child_name: str) -> Inline
 
 
 # ---------------------------------------------------------------------------
+# Оплата (Telegram Stars): registered before all form handlers
+# ---------------------------------------------------------------------------
+
+async def _checkout_request(endpoint: str, payload: dict, *, timeout: float = 8) -> dict:
+    if not BACKEND_INTERNAL_TOKEN or len(BACKEND_INTERNAL_TOKEN) < 32:
+        raise RuntimeError("Checkout is not configured")
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            f"{BACKEND_URL.rstrip('/')}/api/payments/telegram/{endpoint}",
+            json=payload,
+            headers={"X-Legend-Internal-Key": BACKEND_INTERNAL_TOKEN},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+async def _request_payment(trigger_message: Message, state: FSMContext):
+    # A callback's message is authored by the bot. The FSM key identifies the
+    # actual customer. Personalized invoices/delivery are private-chat only.
+    payer_id = state.key.user_id
+    if trigger_message.chat.id != payer_id:
+        await trigger_message.answer("Оформите персональную книгу в личном чате с ботом.")
+        return
+    data = await state.get_data()
+    request_id = data.get("invoice_request_id") or uuid.uuid4().hex
+    await state.update_data(invoice_request_id=request_id)
+    allowed = (
+        "child_id", "child_name", "age", "gender", "style", "image_style",
+        "purpose", "parent_note", "favorite_animal", "favorite_color",
+        "hobby", "favorite_place", "photo_enabled", "photo_consent", "photo_file_id",
+    )
+    payload = {key: data[key] for key in allowed if key in data}
+    payload.update(external_user_id=str(payer_id), channel="telegram",
+                   client_request_id=request_id)
+    try:
+        # The server commits the questionnaire and price BEFORE Telegram sees
+        # an invoice. FSM is now only a disposable form, never payment evidence.
+        invoice = await _checkout_request("invoices", payload)
+    except Exception:
+        await trigger_message.answer(
+            "Не удалось подготовить счёт. Оплата не начата. Попробуйте позже."
+        )
+        return
+
+    child_name = invoice["child_name"]
+    photo_enabled = invoice["photo_enabled"]
+    tariff_label = "с иллюстрацией по фото" if photo_enabled else "с иллюстрациями"
+    await state.update_data(
+        invoice_payload=invoice["invoice_payload"], order_id=invoice["order_id"],
+    )
+    await state.set_state(Form.awaiting_payment)
+    await trigger_message.answer_invoice(
+        title=f"Сказка для {child_name}",
+        description=f"Персональная сказка {tariff_label} — 1 эпизод",
+        payload=invoice["invoice_payload"],
+        currency=invoice["currency"],
+        prices=[LabeledPrice(label="Сказка", amount=invoice["total_amount"])],
+    )
+
+
+@dp.pre_checkout_query()
+async def pre_checkout(query: PreCheckoutQuery, state: FSMContext):
+    try:
+        result = await _checkout_request("precheckout", {
+            "invoice_payload": query.invoice_payload,
+            "external_user_id": str(query.from_user.id),
+            "currency": query.currency,
+            "total_amount": query.total_amount,
+        }, timeout=5)
+        valid = result.get("ok") is True
+    except Exception:
+        valid = False
+    await query.answer(
+        ok=valid,
+        error_message=None if valid else "Не удалось подтвердить счёт. Оплата не принята; попробуйте позже.",
+    )
+
+
+@dp.message(F.successful_payment)
+async def successful_payment_handler(message: Message, state: FSMContext):
+    paid = message.successful_payment
+    if message.chat.id != message.from_user.id:
+        await message.answer("Платёж требует проверки. Откройте личный чат с ботом; повторно платить не нужно.")
+        return
+    try:
+        receipt = await _checkout_request("receipts", {
+            "invoice_payload": paid.invoice_payload,
+            "external_user_id": str(message.from_user.id),
+            "currency": paid.currency,
+            "total_amount": paid.total_amount,
+            "telegram_payment_charge_id": paid.telegram_payment_charge_id,
+        })
+    except Exception:
+        # A durable bot inbox is still required for backend outages. Do not
+        # claim a receipt was saved if that write could not be confirmed.
+        await message.answer(
+            "Telegram подтвердил оплату, но сервис пока не подтвердил сохранение платежа. "
+            "Повторно платить не нужно. Заказ требует проверки."
+        )
+        return
+    await message.answer(f"Оплата заказа №{receipt['order_id']} сохранена. Подготавливаю книгу.")
+    await _generate(message, state, receipt["generation_payload"],
+                    photo_file_id=receipt.get("photo_file_id"))
+
+
+# ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
 
@@ -528,11 +634,14 @@ async def cb_photo_choice(call: CallbackQuery, state: FSMContext):
     if choice == "yes":
         await call.message.answer(
             "📸 Пришли фото ребёнка (одно фото, лицо хорошо видно).\n"
-            "Оно используется только для генерации иллюстраций и нигде не сохраняется."
+            "Отправляя фото, вы разрешаете использовать его для иллюстраций этой книги. "
+            "Для восстановления заказа сохраняется ссылка на файл в Telegram. "
+            "Чтобы продолжить без фото, начните анкету заново командой /start."
         )
         await state.set_state(Form.photo_upload)
     else:
-        await state.update_data(photo_base64=None, photo_enabled=False)
+        await state.update_data(photo_base64=None, photo_file_id=None,
+                                photo_enabled=False, photo_consent=False)
         await call.message.answer("Анкета готова. Перейдём к оплате сказки.")
         await _request_payment(call.message, state)
     await call.answer()
@@ -545,11 +654,10 @@ async def cb_photo_choice(call: CallbackQuery, state: FSMContext):
 @dp.message(Form.photo_upload, F.photo)
 async def form_photo(message: Message, state: FSMContext):
     photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    downloaded = await bot.download_file(file.file_path)
-    photo_bytes = downloaded.read()
-    photo_b64 = base64.b64encode(photo_bytes).decode()
-    await state.update_data(photo_base64=photo_b64, photo_enabled=True, photo_consent=True)
+    # Persist only the Telegram reference with the invoice, never image bytes.
+    # Download after the paid receipt is durable, so a bot restart is recoverable.
+    await state.update_data(photo_base64=None, photo_file_id=photo.file_id,
+                            photo_enabled=True, photo_consent=True)
     await message.answer("Фото получено. Перейдём к оплате сказки.")
     await _request_payment(message, state)
 
@@ -630,72 +738,10 @@ async def _send_pdf(message: Message, pdf_url: str, episode: int) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Оплата (Telegram Stars)
-# ---------------------------------------------------------------------------
-
-async def _request_payment(trigger_message: Message, state: FSMContext):
-    data = await state.get_data()
-    child_name = data.get("child_name", "Герой")
-    photo_enabled = data.get("photo_enabled", False)
-    price_xtr = STORY_WITH_PHOTO_PRICE_XTR if photo_enabled else STORY_PRICE_XTR
-    tariff_label = "с иллюстрацией по фото" if photo_enabled else "с иллюстрациями"
-
-    invoice_payload = f"story_{trigger_message.chat.id}_{uuid.uuid4().hex}"
-    await state.update_data(
-        invoice_payload=invoice_payload,
-        expected_price_xtr=price_xtr,
-        payer_id=trigger_message.chat.id,
-    )
-    await state.set_state(Form.awaiting_payment)
-    await trigger_message.answer_invoice(
-        title=f"✨ Сказка для {child_name}",
-        description=f"Персональная сказка {tariff_label} — 1 эпизод",
-        payload=invoice_payload,
-        currency="XTR",
-        prices=[LabeledPrice(label="Сказка", amount=price_xtr)],
-    )
-
-
-@dp.pre_checkout_query()
-async def pre_checkout(query: PreCheckoutQuery, state: FSMContext):
-    data = await state.get_data()
-    valid = (
-        await state.get_state() == Form.awaiting_payment.state
-        and data.get("invoice_payload") == query.invoice_payload
-        and data.get("expected_price_xtr") == query.total_amount
-        and data.get("payer_id") == query.from_user.id
-        and query.currency == "XTR"
-    )
-    await query.answer(
-        ok=valid,
-        error_message=None if valid else "Счёт устарел. Начните заказ заново.",
-    )
-
-
-@dp.message(F.successful_payment)
-async def successful_payment_handler(message: Message, state: FSMContext):
-    paid = message.successful_payment
-    data = await state.get_data()
-    if not (
-        await state.get_state() == Form.awaiting_payment.state
-        and data.get("invoice_payload") == paid.invoice_payload
-        and data.get("expected_price_xtr") == paid.total_amount
-        and paid.currency == "XTR"
-        and data.get("payer_id") == message.from_user.id
-    ):
-        await message.answer("Платёж получен, но заказ требует проверки. Напишите в поддержку; повторно платить не нужно.")
-        return
-    charge_id = paid.telegram_payment_charge_id
-    await state.update_data(telegram_payment_charge_id=charge_id)
-    await message.answer("✅ Оплата прошла! Создаю сказку — это займёт 3–5 минут...")
-    await _generate(message, state)
-
-
 @dp.message(Form.awaiting_payment)
 async def awaiting_payment_fallback(message: Message):
     await message.answer(
-        "⏳ Ожидаю оплату. Нажми кнопку «Оплатить» выше или напиши /start чтобы начать заново."
+        "Ожидаю оплату. Нажмите кнопку «Оплатить» выше или напишите /start, чтобы начать заново."
     )
 
 
@@ -703,8 +749,10 @@ async def awaiting_payment_fallback(message: Message):
 # Генерация сказки
 # ---------------------------------------------------------------------------
 
-async def _generate(trigger_message: Message, state: FSMContext):
-    data = await state.get_data()
+async def _generate(trigger_message: Message, state: FSMContext, data: dict,
+                    *, photo_file_id: str | None = None):
+    # Only the backend's durable paid snapshot is accepted, never current FSM.
+    data = dict(data)
     if not data.get("telegram_payment_charge_id"):
         await trigger_message.answer("Для этого заказа нет подтверждённой оплаты.")
         return
@@ -722,10 +770,30 @@ async def _generate(trigger_message: Message, state: FSMContext):
     color           = data.get("favorite_color", "синий")
     hobby           = data.get("hobby", "рисование")
     place           = data.get("favorite_place", "лес")
-    photo_b64       = data.get("photo_base64")
+    photo_b64       = None
     photo_enabled   = data.get("photo_enabled", False)
     photo_consent   = data.get("photo_consent", False)
     charge_id       = data.get("telegram_payment_charge_id")
+    if photo_enabled:
+        if not photo_consent or not photo_file_id:
+            await trigger_message.answer(
+                "Платёж сохранён, но согласованное фото недоступно. "
+                "Заказ требует восстановления; повторно платить не нужно."
+            )
+            return
+        try:
+            file = await bot.get_file(photo_file_id)
+            downloaded = await bot.download_file(file.file_path)
+            photo_bytes = downloaded.read(10 * 1024 * 1024 + 1)
+            if not photo_bytes or len(photo_bytes) > 10 * 1024 * 1024:
+                raise ValueError("Photo is empty or too large")
+            photo_b64 = base64.b64encode(photo_bytes).decode()
+        except Exception:
+            await trigger_message.answer(
+                "Платёж сохранён, но фото пока не удалось получить из Telegram. "
+                "Повторно платить не нужно; заказ требует восстановления."
+            )
+            return
 
     img_style_labels = {
         'watercolor': 'акварель', 'ghibli': 'Студия Гибли', 'soviet': 'Советская анимация',
@@ -746,11 +814,11 @@ async def _generate(trigger_message: Message, state: FSMContext):
         f"💪 Любимое занятие: {hobby}\n"
         f"🗺 Место приключений: {place}\n"
         f"🖼 Стиль иллюстраций: {img_style_labels.get(image_style, image_style)}\n\n"
-        "⏳ Это займёт 3–5 минут — не закрывай чат, волшебство уже в пути! ✨",
+        "Книга готовится. Чат можно закрыть; повторная оплата не нужна.",
     )
 
     payload = {
-        "external_user_id": str(trigger_message.chat.id),
+        "external_user_id": data["external_user_id"],
         "channel": "telegram",
         "child_name": child_name,
         "age": age,
@@ -764,6 +832,9 @@ async def _generate(trigger_message: Message, state: FSMContext):
         "favorite_place": place,
         "photo_enabled": photo_enabled,
         "photo_consent": photo_consent,
+        "child_id": data["child_id"],
+        "order_id": data["order_id"],
+        "parent_note": data.get("parent_note"),
     }
     if photo_b64:
         payload["photo_base64"] = photo_b64
@@ -776,13 +847,22 @@ async def _generate(trigger_message: Message, state: FSMContext):
             resp.raise_for_status()
             result = resp.json()
     except httpx.ReadTimeout:
-        await trigger_message.answer("⏳ Сервер не успел ответить. Попробуй ещё раз — напиши СКАЗКА.")
+        await trigger_message.answer(
+            f"Платёж заказа №{data['order_id']} сохранён, но результат пока не получен. "
+            "Не оформляйте новый заказ и не платите повторно."
+        )
         return
     except httpx.HTTPStatusError as e:
-        await trigger_message.answer(f"❌ Ошибка сервера ({e.response.status_code}). Попробуй позже.")
+        await trigger_message.answer(
+            f"Не удалось получить книгу заказа №{data['order_id']} "
+            f"(ошибка {e.response.status_code}). Платёж сохранён; повторная оплата не нужна."
+        )
         return
     except Exception:
-        await trigger_message.answer("❌ Что-то пошло не так. Попробуй ещё раз — напиши СКАЗКА.")
+        await trigger_message.answer(
+            f"Книга заказа №{data['order_id']} пока не получена. "
+            "Платёж сохранён; повторная оплата не нужна."
+        )
         return
 
     # Do not deliver a failed/incomplete paid order, including legacy records.
@@ -866,7 +946,9 @@ async def _generate(trigger_message: Message, state: FSMContext):
         "Сказка доставлена документом выше. Его можно открыть повторно в этом чате.",
         reply_markup=kb_after_story(None, episode, child_name),
     )
-    await state.clear()  # Payment-to-order recovery MUST be persisted before production.
+    # A late payment for an old invoice must not erase a newer questionnaire.
+    if (await state.get_data()).get("order_id") == data["order_id"]:
+        await state.clear()
 
 
 # ---------------------------------------------------------------------------
