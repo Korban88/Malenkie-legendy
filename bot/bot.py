@@ -385,7 +385,12 @@ async def successful_payment_handler(message: Message, state: FSMContext):
             return
         await _deliver_generated_book(message, state, data, result)
         return
-    await message.answer(f"Оплата заказа №{receipt['order_id']} сохранена. Подготавливаю книгу.")
+    try:
+        await message.answer(f"Оплата заказа №{receipt['order_id']} сохранена. Подготавливаю книгу.")
+    except TelegramAPIError:
+        # The receipt is already committed. A rejected status message must not
+        # strand this paid order before generation starts.
+        pass
     await _generate(message, state, data, photo_file_id=receipt.get("photo_file_id"))
 
 
@@ -829,17 +834,22 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
         'confidence': 'поверить в себя', 'bedtime': 'уютная сказка на ночь',
     }
 
-    await _answer_step(
-        trigger_message, 'generating',
-        f"✨ Создаю персональную сказку для {_genitive(child_name)}...\n\n"
-        f"🎯 Цель: {purpose_labels.get(purpose, purpose)}\n"
-        f"🐾 Любимое животное: {animal}\n"
-        f"🎨 Любимый цвет: {color}\n"
-        f"💪 Любимое занятие: {hobby}\n"
-        f"🗺 Место приключений: {place}\n"
-        f"🖼 Стиль иллюстраций: {img_style_labels.get(image_style, image_style)}\n\n"
-        "Книга готовится. Чат можно закрыть; повторная оплата не нужна.",
-    )
+    try:
+        await _answer_step(
+            trigger_message, 'generating',
+            f"✨ Создаю персональную сказку для {_genitive(child_name)}...\n\n"
+            f"🎯 Цель: {purpose_labels.get(purpose, purpose)}\n"
+            f"🐾 Любимое животное: {animal}\n"
+            f"🎨 Любимый цвет: {color}\n"
+            f"💪 Любимое занятие: {hobby}\n"
+            f"🗺 Место приключений: {place}\n"
+            f"🖼 Стиль иллюстраций: {img_style_labels.get(image_style, image_style)}\n\n"
+            "Книга готовится. Чат можно закрыть; повторная оплата не нужна.",
+        )
+    except (TelegramAPIError, OSError):
+        # Progress text and optional local step art are not payment or
+        # generation prerequisites. The paid snapshot remains authoritative.
+        pass
 
     payload = {
         "external_user_id": data["external_user_id"],

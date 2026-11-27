@@ -38,7 +38,8 @@ from backend.app.models import Order, Story
 @pytest.mark.parametrize("db_kind", ["sqlite", "postgresql"])
 @pytest.mark.parametrize("with_photo", [False, True])
 @pytest.mark.parametrize("preview_failure", [False, True])
-def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind, with_photo, preview_failure):
+@pytest.mark.parametrize("progress_failure", [False, True])
+def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db_kind, with_photo, preview_failure, progress_failure):
     db_module = importlib.import_module("backend.app.db")
     images_dir = tmp_path / "images"
     stories_dir = tmp_path / "stories"
@@ -235,7 +236,19 @@ def test_synthetic_order_through_real_handlers_and_api(tmp_path, monkeypatch, db
             await storage.close()
             storage = MemoryStorage()
             state = FSMContext(storage=storage, key=StorageKey(bot_id=123456789, chat_id=42, user_id=42))
+            rejected_progress = []
+            if progress_failure:
+                async def reject_progress(text, **kwargs):
+                    if "Подготавливаю книгу" in text or "Создаю персональную сказку" in text:
+                        rejected_progress.append(True)
+                        raise TelegramBadRequest(
+                            method=SendMessage(chat_id=42, text="synthetic progress"),
+                            message="synthetic Telegram progress rejection",
+                        )
+                message.answer.side_effect = reject_progress
             await bot.successful_payment_handler(message, state)
+            assert len(rejected_progress) == (2 if progress_failure else 0)
+            message.answer.side_effect = None
             message.answer_document.assert_awaited_once()
             pdf = message.answer_document.await_args.kwargs["document"]
             reader = PdfReader(io.BytesIO(pdf.data))
