@@ -1,6 +1,7 @@
 """Durable pre-payment questionnaire and receipts, with no live charges/providers."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import json
 import os
 from threading import Barrier
@@ -104,6 +105,81 @@ def test_pdf_only_replay_never_starts_providers_or_exceeds_retry_limit(checkout_
     assert render.call_count == 2
     text_provider.assert_not_called()
     image_provider.assert_not_called()
+
+
+@pytest.mark.parametrize(('record', 'field', 'value'), [
+    ('order', 'status', 'created'), ('order', 'provider', 'other'),
+    ('order', 'provider_payment_id', None), ('order', 'provider_payment_id', ''),
+    ('order', 'user_id', 'other_owner'), ('story', 'child_id', 'other_child'),
+    ('user', 'channel', 'web'), ('story', 'status', 'generating'),
+    ('story', 'status', 'ready'), ('story', 'status', 'failed'),
+])
+def test_pdf_recovery_skips_unrelated_orders(checkout_engine, monkeypatch, record, field, value):
+    render = Mock(side_effect=AssertionError('unrelated order reached PDF assembly'))
+    monkeypatch.setattr(story_service, 'generate_pdf', render)
+    with Session(checkout_engine) as db:
+        invoice = create_telegram_invoice(db, questionnaire())
+        receipt = accept_telegram_receipt(db, payment(invoice, telegram_payment_charge_id='synthetic-charge'))
+        order = db.get(Order, receipt['order_id'])
+        owner = db.get(User, order.user_id)
+        story = Story(child_id=order.child_id, order_id=order.id, episode_number=1, status='pdf_pending')
+        other_owner = User(external_id='different-synthetic-buyer', channel='telegram')
+        db.add_all([story, other_owner])
+        db.flush()
+        other_child = Child(user_id=other_owner.id, name='Demo', age=8)
+        db.add(other_child)
+        db.flush()
+        values = {'other_owner': other_owner.id, 'other_child': other_child.id}
+        setattr({'order': order, 'story': story, 'user': owner}[record], field, values.get(value, value))
+        db.commit()
+        original = story.status
+        story_id = story.id
+
+    assert story_service.recover_next_paid_pdf(lambda: Session(checkout_engine)) is False
+    with Session(checkout_engine) as db:
+        assert db.get(Story, story_id).status == original
+    render.assert_not_called()
+
+
+def test_storage_outage_retains_staged_assets_and_allows_other_books(checkout_engine, monkeypatch):
+    available = {'available'}
+
+    def validate_images(images):
+        if images[0] not in available:
+            raise FileNotFoundError('Synthetic volume is offline')
+
+    with Session(checkout_engine) as db:
+        stories = []
+        for i, label in enumerate(('offline', 'available')):
+            invoice = create_telegram_invoice(db, questionnaire(client_request_id=str(i) * 32))
+            receipt = accept_telegram_receipt(db, payment(invoice, telegram_payment_charge_id=label))
+            story = Story(child_id=receipt['child_id'], order_id=receipt['order_id'], episode_number=i + 1,
+                          status='pdf_pending', title=label, story_text='Saved', images_urls=[label] * 5)
+            db.add(story)
+            db.commit()
+            stories.append(story.id)
+
+    render = Mock(return_value='local-pdf')
+    monkeypatch.setattr(story_service, 'require_complete_images', validate_images)
+    monkeypatch.setattr(story_service, 'generate_pdf', render)
+    monkeypatch.setattr(story_service, 'require_complete_pdf', lambda _: None)
+    sessions = lambda: Session(checkout_engine)
+    assert story_service.recover_next_paid_pdf(sessions)  # the first volume is missing
+    assert story_service.recover_next_paid_pdf(sessions)  # the next book can finish now
+    assert not story_service.recover_next_paid_pdf(sessions)  # wait for the first book's retry
+    for restored in (False, True):
+        with sessions() as db:
+            first, second = [db.get(Story, story_id) for story_id in stories]
+            assert first.status == 'pdf_pending' and first.pdf_url is None
+            assert second.status == 'ready'
+            first.updated_at = datetime(2000, 1, 1)  # simulate a full retry interval
+            db.commit()
+        if restored:
+            available.add('offline')
+        assert story_service.recover_next_paid_pdf(sessions)
+    with sessions() as db:
+        assert db.get(Story, stories[0]).status == 'ready'
+    assert render.call_count == 2
 
 
 def test_invoice_and_paid_snapshot_survive_new_sessions(checkout_engine):

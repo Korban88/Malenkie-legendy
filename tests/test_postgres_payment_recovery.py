@@ -128,3 +128,49 @@ def test_two_simultaneous_requests_create_one_paid_order_and_one_story(postgres,
     with Session(postgres) as session:
         for model in (User, Child, Order, Story):
             assert session.scalar(select(func.count()).select_from(model)) == 1
+
+
+def test_pdf_worker_skips_a_locked_order_and_serializes_with_replay(postgres, monkeypatch):
+    class Interrupted(BaseException):
+        pass
+
+    def interrupt(**kwargs):
+        raise Interrupted()
+
+    monkeypatch.setattr(story_service, 'generate_story_payload', lambda _: {'title': 'Saved', 'story_text': 'Text'})
+    monkeypatch.setattr(story_service, 'generate_images', lambda **kw: (['fixture'] * 5, None))
+    monkeypatch.setattr(story_service, 'require_complete_images', lambda _: None)
+    monkeypatch.setattr(story_service, 'require_complete_pdf', lambda _: None)
+    monkeypatch.setattr(story_service, 'generate_pdf', interrupt)
+    with Session(postgres) as db, pytest.raises(Interrupted):
+        story_service.generate_story(db, payload())
+
+    rendering = threading.Event()
+    release = threading.Event()
+    renders = []
+
+    def render(**kwargs):
+        renders.append(kwargs['title'])
+        rendering.set()
+        assert release.wait(10)
+        return 'synthetic-pdf'
+
+    def replay():
+        with Session(postgres) as db:
+            return story_service.generate_story(db, payload()).status
+
+    monkeypatch.setattr(story_service, 'generate_pdf', render)
+    sessions = lambda: Session(postgres)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        owner = pool.submit(story_service.recover_next_paid_pdf, sessions)
+        try:
+            assert rendering.wait(5)
+            competing = pool.submit(story_service.recover_next_paid_pdf, sessions)
+            foreground = pool.submit(replay)
+            assert competing.result(timeout=3) is False
+        finally:
+            release.set()
+        assert owner.result(timeout=5) is True
+        assert foreground.result(timeout=5) == 'ready'
+    assert renders == ['Saved']
+    assert story_service.recover_next_paid_pdf(sessions) is False

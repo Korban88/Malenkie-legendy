@@ -35,6 +35,7 @@ def test_private_file_routes_fail_closed(monkeypatch, tmp_path):
         main_module = importlib.import_module("backend.app.main")
     # Module-level settings may already be cached by another test.
     monkeypatch.setattr(main_module, "settings", get_settings())
+    monkeypatch.setattr(main_module, "recover_next_paid_pdf", lambda sessions: False)
     app = main_module.app
 
     with TestClient(app) as client:

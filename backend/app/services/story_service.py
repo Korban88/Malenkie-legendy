@@ -1,4 +1,9 @@
-from sqlalchemy import desc, func, select, text
+import errno
+import logging
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import desc, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -11,6 +16,8 @@ from .text_service import choose_style, generate_story_payload
 
 
 PDF_PENDING_STATES = ('pdf_pending', 'pdf_retry')
+PDF_RETRY_DELAY = timedelta(seconds=30)
+log = logging.getLogger(__name__)
 
 
 def health_db(db: Session) -> list[str]:
@@ -146,11 +153,13 @@ def _paid_questionnaire(order: Order, child: Child, payload: dict) -> dict:
     return dict(snapshot)
 
 
-def _finish_paid_pdf(db: Session, story: Story, questionnaire: dict) -> Story:
+def _finish_paid_pdf(db: Session, story: Story, questionnaire: dict | None, *, background: bool = False) -> Story:
     """Render only saved assets under the paid order lock. A replay may have finished first."""
     if story.status not in PDF_PENDING_STATES:
         return story
     try:
+        if not isinstance(questionnaire, dict) or questionnaire.get('version') != 1:
+            raise ValueError('Saved paid questionnaire is invalid')
         require_complete_images(story.images_urls)
         pdf_url = generate_pdf(
             title=story.title, story_text=story.story_text, image_urls=story.images_urls,
@@ -158,12 +167,21 @@ def _finish_paid_pdf(db: Session, story: Story, questionnaire: dict) -> Story:
             next_hook=story.next_hook or '', gender=questionnaire['gender'],
         )
         require_complete_pdf(pdf_url)
-    except Exception:
-        # One further render after an observed failure. A process interruption
-        # leaves the last committed stage intact and never restarts paid models.
-        story.status = 'pdf_retry' if story.status == 'pdf_pending' else 'failed'
-        story.error_message = 'PDF assembly failed'
+    except Exception as exc:
+        if (isinstance(exc, (FileNotFoundError, PermissionError, TimeoutError))
+                or isinstance(exc, OSError) and errno.errorcode.get(exc.errno) in {
+                    'EIO', 'ENOSPC', 'EDQUOT', 'EROFS', 'ESTALE', 'ENODEV', 'EBUSY', 'EAGAIN', 'EINTR', 'ENOTCONN',
+                }):
+            story.error_message = 'PDF storage temporarily unavailable'
+        else:
+            story.status = 'pdf_retry' if story.status == 'pdf_pending' else 'failed'
+            story.error_message = 'PDF assembly failed'
+        # Refresh the delay even when consecutive outages leave the same state.
+        story.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
+        if background:
+            log.warning('Staged PDF assembly deferred or failed (%s)', type(exc).__name__)
+            return story
         raise
     story.pdf_url = pdf_url
     story.status = 'ready'
@@ -171,6 +189,37 @@ def _finish_paid_pdf(db: Session, story: Story, questionnaire: dict) -> Story:
     db.commit()
     db.refresh(story)
     return story
+
+
+def recover_next_paid_pdf(session_factory: Callable[[], Session]) -> bool:
+    """Assemble one staged Telegram book from disk under the normal paid-order lock."""
+    with session_factory() as db:
+        due = datetime.now(timezone.utc).replace(tzinfo=None) - PDF_RETRY_DELAY
+        candidate = db.execute(
+            select(Story, Order)
+            .join(Order, Story.order_id == Order.id)
+            .join(Child, Story.child_id == Child.id)
+            .join(User, Child.user_id == User.id)
+            .where(
+                Story.status.in_(PDF_PENDING_STATES),
+                or_(Story.error_message.is_(None), Story.updated_at <= due),
+                Order.status == 'paid', Order.provider == 'telegram_stars',
+                Order.provider_payment_id != '',
+                Order.child_id == Child.id, Order.user_id == Child.user_id, User.channel == 'telegram',
+            )
+            .order_by(Story.updated_at, Story.id)
+            .limit(1)
+            .with_for_update(of=Order, skip_locked=True)
+        ).one_or_none()
+        if candidate is None:
+            return False
+        story, order = candidate
+        # A foreground replay may finish between our initial snapshot and lock.
+        db.refresh(story)
+        if story.status in PDF_PENDING_STATES and (story.error_message is None or story.updated_at <= due):
+            snapshot = order.meta.get('questionnaire_v1') if isinstance(order.meta, dict) else None
+            _finish_paid_pdf(db, story, snapshot, background=True)
+        return True
 
 
 def generate_story(db: Session, payload: dict) -> Story:

@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -6,13 +8,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .db import Base, engine, get_db
+from .db import Base, SessionLocal, engine, get_db
 from .internal_auth import require_internal_token
 from .private_media import locate_media, verify_cover_reference
 from .routers.payment import router as payment_router
 from .routers.story import router as story_router
 from .services.cost_guard import ALLOWED_MODELS, BLOCKED_SUBSTRINGS
-from .services.story_service import health_db
+from .services.story_service import health_db, recover_next_paid_pdf
 
 log = logging.getLogger("malenkie_legendy")
 
@@ -35,7 +37,35 @@ if _configured_model not in ALLOWED_MODELS:
     )
 log.info("[STARTUP] Model validated: %s", _configured_model)
 
-app = FastAPI(title=settings.app_name)
+PDF_RECOVERY_INTERVAL = 30
+
+
+async def _recover_staged_books(stop: asyncio.Event):
+    while not stop.is_set():
+        try:
+            if await asyncio.to_thread(recover_next_paid_pdf, SessionLocal):
+                continue
+        except Exception as exc:
+            # DB and renderer exceptions may contain private parameters or paths.
+            log.warning('Paid PDF recovery attempt failed (%s)', type(exc).__name__)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=PDF_RECOVERY_INTERVAL)
+        except asyncio.TimeoutError:
+            pass
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    stop = asyncio.Event()
+    worker = asyncio.create_task(_recover_staged_books(stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        await worker
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(story_router)
 app.include_router(payment_router)
 
