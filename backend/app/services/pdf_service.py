@@ -248,7 +248,7 @@ def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
                            dry_run=True, output='LINES',
                            new_x='LMARGIN', new_y='NEXT')
     text_h = len(lines) * 7
-    box_h = text_h + 20
+    box_h = text_h + 12
 
     bx = MARGIN_OUTER
     by = pdf.get_y() + 4
@@ -263,12 +263,6 @@ def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
     pdf.rect(bx + 2, by + 2, CONTENT_W - 4, box_h - 4)
 
     pdf.set_y(by + 5)
-    pdf.set_font('DejaVu', style='B', size=8)
-    pdf.set_text_color(ar, ag, ab)
-    pdf.set_x(MARGIN_OUTER)
-    pdf.cell(CONTENT_W, 5, '◆  Хочешь ещё одну сказку?  ◆', align='C')
-    pdf.ln(5)
-
     tr, tg, tb = C['TTL']
     pdf.set_font('DejaVu', style='I', size=10)
     pdf.set_text_color(tr, tg, tb)
