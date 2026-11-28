@@ -55,7 +55,7 @@ def test_providers_get_one_editorial_pass_and_save_the_actual_hook(monkeypatch, 
 @pytest.mark.parametrize("episode", [1, 2])
 def test_two_offline_plots_resolve_their_problem_and_carry_a_concrete_clue(monkeypatch, episode):
     monkeypatch.setattr(text_service.settings, "text_provider", "template")
-    data = form(episode_number=episode)
+    data = form(episode_number=episode, favorite_animal="журавль")
     first = text_service.generate_story_payload(data)
     following = text_service.generate_story_payload({
         **data, "episode_number": episode + 1, "previous_memory": first["memory"],
@@ -65,6 +65,7 @@ def test_two_offline_plots_resolve_their_problem_and_carry_a_concrete_clue(monke
     assert first["next_hook"] not in first["story_text"]
     assert first["next_hook"] != following["next_hook"]
     assert len(first["image_prompts"]) == len(following["image_prompts"]) == 5
+    assert "мордочка" not in first["story_text"]
     introduction = following["story_text"].split("\n\n", 2)[1]
     if "стрелка" in first["next_hook"]:
         assert "под доску со стрелкой" in introduction
