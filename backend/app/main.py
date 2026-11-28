@@ -11,6 +11,7 @@ from .config import get_settings
 from .db import Base, SessionLocal, engine, get_db
 from .internal_auth import require_internal_token
 from .private_media import locate_media, verify_cover_reference
+from .routers.delivery import router as delivery_router
 from .routers.payment import router as payment_router
 from .routers.story import router as story_router
 from .services.cost_guard import ALLOWED_MODELS, BLOCKED_SUBSTRINGS
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.include_router(story_router)
 app.include_router(payment_router)
+app.include_router(delivery_router)
 
 
 @app.get('/health')

@@ -41,7 +41,8 @@ class ReservedDocument:
 
 
 def reserve_ready_delivery(session_factory, *, order_id: int, story_id: int,
-                           external_user_id: str) -> ReservedDocument | None:
+                           external_user_id: str,
+                           expected_sha256: str | None = None) -> ReservedDocument | None:
     """Use a dedicated transaction; return a reservation only after commit."""
     if (type(order_id) is not int or order_id <= 0 or type(story_id) is not int
             or story_id <= 0 or not isinstance(external_user_id, str)
@@ -61,7 +62,7 @@ def reserve_ready_delivery(session_factory, *, order_id: int, story_id: int,
         if row is None:
             return None
         digest = _checked_digest(row)
-        if digest is None:
+        if digest is None or (expected_sha256 is not None and digest != expected_sha256):
             return None
         token = uuid4().hex
         db.add(DeliveryReservation(order_id=order_id, story_id=story_id,
