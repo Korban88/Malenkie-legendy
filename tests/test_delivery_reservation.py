@@ -1,5 +1,7 @@
 """Local reservation regressions; no bot, provider, or real payment calls."""
 import hashlib
+import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from types import SimpleNamespace
@@ -8,7 +10,8 @@ import pytest
 from PIL import Image
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen.canvas import Canvas
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.compiler import compiles, deregister
 from sqlalchemy.orm import sessionmaker
@@ -23,13 +26,32 @@ from backend.app.services.telegram_delivery import (
 from backend.app.services.telegram_library import find_book
 
 
-@pytest.fixture
-def paid(tmp_path, monkeypatch):
-    @compiles(JSONB, 'sqlite')
-    def jsonb(type_, compiler, **kw):
-        return 'JSON'
+@pytest.fixture(params=["sqlite", "postgresql"])
+def paid(tmp_path, monkeypatch, request):
+    pg_admin = None
+    schema = None
+    if request.param == "sqlite":
+        @compiles(JSONB, "sqlite")
+        def jsonb(type_, compiler, **kw):
+            return "JSON"
+        engine = create_engine("sqlite:///" + (tmp_path / "synthetic.db").as_posix())
+    else:
+        dsn = os.getenv("LEGENDKIDS_TEST_POSTGRES_DSN")
+        if not dsn:
+            pytest.skip("Dedicated loopback test PostgreSQL not configured")
+        url = make_url(dsn)
+        if (url.drivername != "postgresql+psycopg"
+                or url.host not in {"127.0.0.1", "localhost"}
+                or url.database != "legendkids_test"
+                or url.username != "legendkids_test" or url.query):
+            raise RuntimeError("Only dedicated loopback legendkids_test DB is allowed")
+        schema = "lk_delivery_" + uuid.uuid4().hex
+        pg_admin = create_engine(url)
+        with pg_admin.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        # Keep the isolated search_path on reopening the engine.
+        engine = create_engine(url.update_query_dict({"options": f"-csearch_path={schema}"}))
     monkeypatch.setattr(book_release, 'get_settings', lambda: SimpleNamespace(stories_dir=str(tmp_path)))
-    engine = create_engine('sqlite:///' + (tmp_path / 'synthetic.db').as_posix())
     factory = sessionmaker(bind=engine)
     path = tmp_path / ('a' * 32 + '.pdf')
     pdf = Canvas(str(path))
@@ -57,7 +79,14 @@ def paid(tmp_path, monkeypatch):
         yield factory, args, second, path, engine
     finally:
         engine.dispose()
-        deregister(JSONB)
+        if request.param == 'sqlite':
+            deregister(JSONB)
+        if pg_admin is not None:
+            try:
+                with pg_admin.begin() as conn:
+                    conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            finally:
+                pg_admin.dispose()
 
 
 def test_reservation_survives_restart_and_unknown_outcome(paid):
@@ -127,3 +156,23 @@ def test_two_workers_claim_one_order_once(paid, monkeypatch):
     assert sum(r is not None for r in results) == 1
     with factory() as db:
         assert db.scalar(select(func.count(DeliveryReservation.order_id))) == 1
+
+
+def test_two_receipts_cannot_overwrite_each_other(paid):
+    factory, args, _, _, _ = paid
+    claim = reserve_ready_delivery(factory, **args)
+    barrier = Barrier(2, timeout=5)
+
+    def acknowledge(message_id):
+        barrier.wait()
+        return acknowledge_delivery(factory, order_id=claim.order_id,
+                                    token=claim.token, message_id=message_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(acknowledge, (123, 124)))
+    assert sum(results) == 1
+    winner = 123 if results[0] else 124
+    with factory() as db:
+        assert db.get(DeliveryReservation, claim.order_id).telegram_message_id == winner
+    assert acknowledge_delivery(factory, order_id=claim.order_id,
+                                token=claim.token, message_id=winner)
