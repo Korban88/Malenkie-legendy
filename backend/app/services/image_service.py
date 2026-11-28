@@ -3,13 +3,15 @@ import hashlib
 import logging
 import uuid
 from pathlib import Path
+from io import BytesIO
 from urllib.parse import quote
 
 import httpx
+from PIL import Image
 
 from ..book_release import EXPECTED_IMAGES, require_illustration_prompts
 from ..config import get_settings
-from ..private_media import sign_cover_reference
+from ..private_media import locate_media, sign_cover_reference
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -316,6 +318,22 @@ def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'wa
     return ". ".join(parts)[:3900]
 
 
+def _read_verified_reference_image(directory: Path, filename: str) -> bytes:
+    """Validate the saved bytes before signing or using a generated reference."""
+    path = locate_media(str(directory), filename, kind="images")
+    with path.open("rb") as source:
+        content = source.read(30 * 1024 * 1024 + 1)
+    if len(content) > 30 * 1024 * 1024:
+        raise ValueError("Reference image exceeds delivery limit")
+    with Image.open(BytesIO(content)) as image:
+        if image.format not in {"PNG", "JPEG", "WEBP"}:
+            raise ValueError("Unsupported reference image format")
+        image.verify()
+    with Image.open(BytesIO(content)) as image:
+        image.load()
+    return content
+
+
 def generate_images(child_name, age, style, photo_base64, char_desc='',
                     scene_prompts=None, count=EXPECTED_IMAGES, image_style='watercolor'):
     if count == EXPECTED_IMAGES:
@@ -368,6 +386,9 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                     cover_fidelity=(i > 0 and cover_ref_b64 is not None),
                     cover_url=cover_public_url if i > 0 else None,
                 )
+            verified = None
+            if photo_bound or requires_cover_reference:
+                verified = _read_verified_reference_image(out_dir, filename)
             if i == 0:
                 # Together receives a time-limited cover reference, never a permanently public image.
                 cover_public_url = sign_cover_reference(filename) if requires_cover_reference else None
@@ -375,9 +396,7 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                 if photo_bound:
                     # No optional external vision call for this route. Subsequent
                     # scenes must use the actual saved cover, not a missing file.
-                    cover_ref_b64 = base64.b64encode((out_dir / filename).read_bytes()).decode()
-                    if not cover_ref_b64:
-                        raise ValueError('Saved reference cover is empty')
+                    cover_ref_b64 = base64.b64encode(verified).decode()
                 elif settings.image_provider != 'together':
                     try:
                         cover_path = out_dir / filename

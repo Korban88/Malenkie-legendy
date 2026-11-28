@@ -1,6 +1,8 @@
 """Synthetic image adapter regressions. All provider boundaries are mocked."""
 import base64
 from pathlib import Path
+from io import BytesIO
+from PIL import Image
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -77,7 +79,10 @@ def test_failed_photo_cover_stops_batch(isolated):
 def test_photo_batch_uses_saved_cover_without_hidden_provider(isolated, monkeypatch):
     cfg, post = isolated
     post.side_effect = None
-    post.return_value = httpx.Response(200, content=b'synthetic-returned-cover', request=httpx.Request('POST','https://test.invalid'))
+    buffer = BytesIO()
+    Image.new('RGB', (32, 24), 'navy').save(buffer, format='PNG')
+    cover_bytes = buffer.getvalue()
+    post.return_value = httpx.Response(200, content=cover_bytes, request=httpx.Request('POST','https://test.invalid'))
     index = iter(range(1,6))
     def save(data, directory):
         name = f'{next(index):032x}.png'
@@ -89,7 +94,7 @@ def test_photo_batch_uses_saved_cover_without_hidden_provider(isolated, monkeypa
     assert post.call_count == 5
     assert all('/control/style' in c.args[0] for c in post.call_args_list)
     assert post.call_args_list[0].kwargs['files']['image'][1] == base64.b64decode(PHOTO)
-    assert all(c.kwargs['files']['image'][1] == b'synthetic-returned-cover' for c in post.call_args_list[1:])
+    assert all(c.kwargs['files']['image'][1] == cover_bytes for c in post.call_args_list[1:])
     service._extract_character_appearance.assert_not_called()
     service._extract_style_fingerprint.assert_not_called()
     service._openai_edit_generate.assert_not_called()
