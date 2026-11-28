@@ -8,6 +8,7 @@ from fpdf import FPDF
 
 from ..config import get_settings
 from ..story_structure import story_sections
+from .paper_stock import write_with_paper
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -248,7 +249,7 @@ def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
                            dry_run=True, output='LINES',
                            new_x='LMARGIN', new_y='NEXT')
     text_h = len(lines) * 7
-    box_h = text_h + 20
+    box_h = text_h + 12
 
     bx = MARGIN_OUTER
     by = pdf.get_y() + 4
@@ -263,12 +264,6 @@ def _draw_hook_box(pdf: FPDF, C: dict, hook_text: str) -> None:
     pdf.rect(bx + 2, by + 2, CONTENT_W - 4, box_h - 4)
 
     pdf.set_y(by + 5)
-    pdf.set_font('DejaVu', style='B', size=8)
-    pdf.set_text_color(ar, ag, ab)
-    pdf.set_x(MARGIN_OUTER)
-    pdf.cell(CONTENT_W, 5, '◆  Хочешь ещё одну сказку?  ◆', align='C')
-    pdf.ln(5)
-
     tr, tg, tb = C['TTL']
     pdf.set_font('DejaVu', style='I', size=10)
     pdf.set_text_color(tr, tg, tb)
@@ -411,7 +406,6 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
             nonlocal page_num
             page_num += 1
             pdf.add_page()
-            _fill_bg(pdf, C)
             _draw_running_header(pdf, C, title)
             _draw_page_number(pdf, C, page_num)
             pdf.set_y(MARGIN_TOP + 4)
@@ -497,7 +491,7 @@ def generate_pdf(title: str, story_text: str, image_urls: list[str],
         pdf.set_x(MARGIN_OUTER)
         pdf.multi_cell(CONTENT_W, 7, farewell, align='C', new_x='LMARGIN', new_y='NEXT')
 
-        pdf.output(str(full_path))
+        write_with_paper(pdf.output(), full_path)
         logger.info('PDF generated: %s (%d bytes, %d pages)', filename, full_path.stat().st_size, page_num)
 
     except Exception as exc:

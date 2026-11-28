@@ -172,7 +172,7 @@ def test_synthetic_order_through_real_handlers_and_api(
             storage = MemoryStorage()
             state = FSMContext(storage=storage, key=StorageKey(bot_id=123456789, chat_id=42, user_id=42))
             message = SimpleNamespace(
-                chat=SimpleNamespace(id=42),
+                chat=SimpleNamespace(id=42, type="private"),
                 from_user=SimpleNamespace(id=42),
                 text="Лена", answer=AsyncMock(), answer_photo=AsyncMock(),
                 answer_document=AsyncMock(), answer_invoice=AsyncMock(),
