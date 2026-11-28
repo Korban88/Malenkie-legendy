@@ -979,6 +979,12 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
 
 async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
                                   data: dict, result: dict):
+    # All initial previews and documents must go only to the paid buyer.
+    sender = trigger_message.from_user
+    if (sender is None or trigger_message.chat.type != "private"
+            or trigger_message.chat.id != sender.id
+            or str(sender.id) != data.get("external_user_id")):
+        return
     child_name = data.get("child_name", "Герой")
     illustrations = result.get("images_urls")
     # Do not deliver a failed/incomplete paid order, including legacy records.
@@ -998,6 +1004,26 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
     episode     = result.get("episode_number", 1)
     title       = result.get("title", "")
     next_hook   = result.get("next_hook")
+
+    # Reuse the same ownership, technical PDF gate and byte digest as /books.
+    # The generation response alone does not bind the later downloaded bytes.
+    story_id = result.get("story_id")
+    try:
+        if type(story_id) is not int or story_id <= 0:
+            raise ValueError("Invalid paid story ID")
+        book = await _checkout_request(f"library/{story_id}", {
+            "external_user_id": str(sender.id),
+        })
+        digest = book.get("pdf_sha256") if isinstance(book, dict) else None
+        if (not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or book.get("pdf_url") != pdf_url or book.get("episode_number") != episode):
+            raise ValueError("Paid book verification failed")
+    except (httpx.HTTPError, RuntimeError, ValueError):
+        await trigger_message.answer(
+            "Оплата получена, но книгу пока не удалось проверить. "
+            "Повторно платить не нужно. Попробуйте /books позже."
+        )
+        return
 
     # The paid PDF is the primary deliverable. Telegram may reject an optional
     # preview message (for example malformed generated Markdown) or photo.
@@ -1044,7 +1070,7 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
         preview_complete = False
 
     # ── PDF и кнопки: private authenticated delivery ────────────────────
-    if not pdf_url or not await _send_pdf(trigger_message, pdf_url, episode):
+    if not pdf_url or not await _send_pdf(trigger_message, pdf_url, episode, expected_sha256=digest):
         # The customer has already paid. Do not clear the paid state or
         # invite another payment. Durable recovery across restarts remains P0.
         await trigger_message.answer(
