@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramAPIError
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -121,9 +121,10 @@ class Form(StatesGroup):
 # ---------------------------------------------------------------------------
 
 def kb_start() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✨ Создать сказку", callback_data="start_story"),
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✨ Создать сказку", callback_data="start_story")],
+        [InlineKeyboardButton(text="Мои книги", callback_data="books")],
+    ])
 
 
 def kb_age() -> InlineKeyboardMarkup:
@@ -397,6 +398,72 @@ async def successful_payment_handler(message: Message, state: FSMContext):
 # ---------------------------------------------------------------------------
 # /start
 # ---------------------------------------------------------------------------
+
+async def _show_books(message: Message, reader_id: int, before: int | None = None):
+    try:
+        page = await _checkout_request("library", {
+            "external_user_id": str(reader_id), "before_story_id": before,
+        })
+    except (httpx.HTTPError, RuntimeError, ValueError):
+        await message.answer("Не удалось открыть книги. Попробуйте /books позже.")
+        return
+    if not page["books"]:
+        await message.answer("Готовых оплаченных книг здесь пока нет.")
+        return
+    rows = []
+    for book in page["books"]:
+        title = (book["title"] or "Сказка").strip()[:54]
+        rows.append([InlineKeyboardButton(
+            text=f"{book['episode_number']}. {title}", callback_data=f"book:{book['story_id']}",
+        )])
+    if page["next_before_story_id"] is not None:
+        rows.append([InlineKeyboardButton(
+            text="Ранее", callback_data=f"books:{page['next_before_story_id']}",
+        )])
+    await message.answer("Выберите книгу, чтобы получить PDF.", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@dp.message(Command("books"))
+async def cmd_books(message: Message):
+    if message.from_user is None or message.chat.type != "private" or message.chat.id != message.from_user.id:
+        await message.answer("Откройте /books в личном чате с ботом.")
+        return
+    await _show_books(message, message.from_user.id)
+
+
+@dp.callback_query(F.data == "books")
+@dp.callback_query(F.data.regexp(r"^(?:book|books):[1-9][0-9]{0,9}$"))
+async def select_book(call: CallbackQuery):
+    message = call.message
+    if not isinstance(message, Message) or message.chat.type != "private" or message.chat.id != call.from_user.id:
+        await call.answer("Книги доступны в личном чате с ботом.", show_alert=True)
+        return
+    action, _, value = call.data.partition(":")
+    number = int(value) if value else None
+    if number is not None and number > 2147483647:
+        await call.answer("Книга недоступна.", show_alert=True)
+        return
+    try:
+        await call.answer()
+    except TelegramAPIError:
+        pass  # An expired button acknowledgement need not interrupt retrieval.
+    if action == "books":
+        await _show_books(message, call.from_user.id, number)
+        return
+    try:
+        book = await _checkout_request(f"library/{number}", {"external_user_id": str(call.from_user.id)})
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            await message.answer("Книга недоступна. Откройте свои книги через /books.")
+            return
+        await message.answer("Не удалось получить PDF. Попробуйте /books позже.")
+        return
+    except (httpx.HTTPError, RuntimeError, ValueError):
+        await message.answer("Не удалось получить PDF. Попробуйте /books позже.")
+        return
+    if not await _send_pdf(message, book["pdf_url"], book["episode_number"]):
+        await message.answer("Не удалось доставить PDF. Книгу можно снова выбрать через /books.")
+
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):

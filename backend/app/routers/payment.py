@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..internal_auth import require_internal_token
 from ..services.payment_service import confirm_order, create_order
+from ..services.telegram_library import find_book, list_books
 from ..services.telegram_checkout import (
     accept_telegram_receipt,
     check_telegram_invoice,
     create_telegram_invoice,
 )
 from ..telegram_checkout_schemas import (
+    Identifier,
     TelegramCheckoutCheck,
     TelegramInvoiceCreate,
     TelegramInvoiceResponse,
@@ -32,6 +34,28 @@ class OrderCreateRequest(BaseModel):
 
 class OrderConfirmRequest(BaseModel):
     provider_payment_id: str | None = None
+
+
+class TelegramLibraryReader(BaseModel):
+    external_user_id: Identifier
+
+
+class TelegramLibraryPage(TelegramLibraryReader):
+    before_story_id: int | None = Field(default=None, strict=True, gt=0, le=2147483647)
+
+
+@router.post('/telegram/library')
+def telegram_library(payload: TelegramLibraryPage, db: Session = Depends(get_db)):
+    return list_books(db, payload.external_user_id, payload.before_story_id)
+
+
+@router.post('/telegram/library/{story_id}')
+def telegram_library_book(story_id: int, payload: TelegramLibraryReader, db: Session = Depends(get_db)):
+    if 0 < story_id <= 2147483647:
+        book = find_book(db, payload.external_user_id, story_id)
+        if book is not None:
+            return book
+    raise HTTPException(status_code=404, detail='Book not available')
 
 
 @router.post('/telegram/invoices', response_model=TelegramInvoiceResponse)
