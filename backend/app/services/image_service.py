@@ -320,6 +320,11 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                     scene_prompts=None, count=EXPECTED_IMAGES, image_style='watercolor'):
     if count == EXPECTED_IMAGES:
         require_illustration_prompts(scene_prompts)
+    requires_cover_reference = settings.image_provider == 'together' and count > 1
+    if requires_cover_reference:
+        # Validate signing configuration before any provider or photo I/O.
+        # The synthetic filename is never sent or persisted.
+        sign_cover_reference('0' * 32 + '.png')
     urls: list[str | None] = [None] * count   # fixed-size: indices preserved even on failure
     photo_hash = None
     out_dir = Path(settings.images_dir)
@@ -353,11 +358,9 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                 cover_fidelity=(i > 0 and cover_ref_b64 is not None),
                 cover_url=cover_public_url if i > 0 else None,
             )
-            urls[i] = f'{settings.public_base_url}/files/images/{filename}'
-
             if i == 0:
                 # Together receives a time-limited cover reference, never a permanently public image.
-                cover_public_url = sign_cover_reference(filename) if settings.image_provider == 'together' else None
+                cover_public_url = sign_cover_reference(filename) if requires_cover_reference else None
                 # For non-Together providers: extract style+character via GPT-4o Vision
                 if settings.image_provider != 'together':
                     try:
@@ -368,7 +371,13 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                             visual_style_fingerprint = _extract_style_fingerprint(cover_ref_b64)
                     except Exception:
                         pass
+            urls[i] = f'{settings.public_base_url}/files/images/{filename}'
         except Exception as exc:
+            if requires_cover_reference:
+                # An incomplete reference-bound batch cannot pass the book gate.
+                # Do not spend on later slots or expose signed URLs in logs.
+                logger.warning('Referenced image sequence stopped at slot %d (%s)', i, type(exc).__name__)
+                break
             logger.warning('Image generation failed for slot %d: %s', i, exc)
     return urls, photo_hash
 
@@ -445,6 +454,9 @@ def _generate_single(prompt: str, photo_base64: str | None, cover_fidelity: bool
         try:
             return _together_generate(prompt, reference_url=cover_url)
         except Exception as exc:
+            if cover_url is not None:
+                # The configured text-only backups cannot preserve this reference.
+                raise
             logger.warning('Together image generation failed: %s', exc)
             if settings.backup_image_provider == 'openai':
                 return _openai_generate(prompt)
