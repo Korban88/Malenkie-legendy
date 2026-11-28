@@ -320,6 +320,11 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                     scene_prompts=None, count=EXPECTED_IMAGES, image_style='watercolor'):
     if count == EXPECTED_IMAGES:
         require_illustration_prompts(scene_prompts)
+    # Legacy text-only cover routes silently discard an uploaded photo. Do
+    # not treat their result as a personalized photo illustration.
+    photo_bound = bool(photo_base64)
+    if photo_bound and (settings.image_provider != 'stability' or not settings.stability_api_key):
+        raise RuntimeError('Configured image route cannot preserve the source photo')
     requires_cover_reference = settings.image_provider == 'together' and count > 1
     if requires_cover_reference:
         # Validate signing configuration before any provider or photo I/O.
@@ -353,16 +358,27 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
         )
         try:
             ref = photo_base64 if i == 0 else (cover_ref_b64 or photo_base64)
-            filename = _generate_single(
-                prompt, ref,
-                cover_fidelity=(i > 0 and cover_ref_b64 is not None),
-                cover_url=cover_public_url if i > 0 else None,
-            )
+            if photo_bound:
+                # Stay on the explicitly configured reference-aware legacy route.
+                # Never switch to a text-only backup or a second provider.
+                filename = _stability_generate(prompt, ref, fidelity=0.82 if i > 0 else 0.60)
+            else:
+                filename = _generate_single(
+                    prompt, ref,
+                    cover_fidelity=(i > 0 and cover_ref_b64 is not None),
+                    cover_url=cover_public_url if i > 0 else None,
+                )
             if i == 0:
                 # Together receives a time-limited cover reference, never a permanently public image.
                 cover_public_url = sign_cover_reference(filename) if requires_cover_reference else None
                 # For non-Together providers: extract style+character via GPT-4o Vision
-                if settings.image_provider != 'together':
+                if photo_bound:
+                    # No optional external vision call for this route. Subsequent
+                    # scenes must use the actual saved cover, not a missing file.
+                    cover_ref_b64 = base64.b64encode((out_dir / filename).read_bytes()).decode()
+                    if not cover_ref_b64:
+                        raise ValueError('Saved reference cover is empty')
+                elif settings.image_provider != 'together':
                     try:
                         cover_path = out_dir / filename
                         if cover_path.exists():
@@ -373,7 +389,7 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                         pass
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
         except Exception as exc:
-            if requires_cover_reference:
+            if requires_cover_reference or photo_bound:
                 # An incomplete reference-bound batch cannot pass the book gate.
                 # Do not spend on later slots or expose signed URLs in logs.
                 logger.warning('Referenced image sequence stopped at slot %d (%s)', i, type(exc).__name__)
@@ -575,8 +591,10 @@ def _stability_generate(prompt: str, photo_base64: str | None, fidelity: float =
             files={'image': ('reference.png', photo_bytes, 'image/png')},
             timeout=120,
         )
-        if response.status_code == 200:
-            return _save_image_bytes(response.content, out_dir)
+        # An unsuccessful reference request must not silently become a
+        # second billable, unreferenced generation.
+        response.raise_for_status()
+        return _save_image_bytes(response.content, out_dir)
     response = httpx.post(
         'https://api.stability.ai/v2beta/stable-image/generate/core',
         headers={'Authorization': f'Bearer {settings.stability_api_key}', 'Accept': 'image/*'},
