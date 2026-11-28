@@ -107,6 +107,9 @@ def test_synthetic_order_through_real_handlers_and_api(
                 yield db
 
         monkeypatch.setitem(main.app.dependency_overrides, db_module.get_db, isolated_db)
+        from backend.app.routers.delivery import delivery_sessions
+        from backend.app.services.telegram_delivery import DeliveryReservation
+        monkeypatch.setitem(main.app.dependency_overrides, delivery_sessions, lambda: lambda: Session(engine))
 
         generation_calls = []
 
@@ -172,12 +175,20 @@ def test_synthetic_order_through_real_handlers_and_api(
             storage = MemoryStorage()
             state = FSMContext(storage=storage, key=StorageKey(bot_id=123456789, chat_id=42, user_id=42))
             message = SimpleNamespace(
-                chat=SimpleNamespace(id=42),
+                chat=SimpleNamespace(id=42, type="private"),
                 from_user=SimpleNamespace(id=42),
                 text="Лена", answer=AsyncMock(), answer_photo=AsyncMock(),
                 answer_document=AsyncMock(), answer_invoice=AsyncMock(),
                 edit_reply_markup=AsyncMock(),
             )
+
+            async def accept_document(**kwargs):
+                attachment = kwargs["document"]
+                return SimpleNamespace(chat=message.chat, message_id=73,
+                                       document=SimpleNamespace(file_name=attachment.filename,
+                                                                file_size=len(attachment.data),
+                                                                file_id="synthetic-document"))
+            message.answer_document.side_effect = accept_document
 
             def callback(value):
                 return SimpleNamespace(data=value, message=message, answer=AsyncMock())
@@ -251,15 +262,21 @@ def test_synthetic_order_through_real_handlers_and_api(
                 # The source photo can expire between payment and this retry.
                 get_photo.side_effect = RuntimeError("original photo no longer available")
             rejected_progress = []
-            if progress_failure:
-                async def reject_progress(text, **kwargs):
-                    if "Подготавливаю книгу" in text or "Создаю персональную сказку" in text:
-                        rejected_progress.append(True)
-                        raise TelegramBadRequest(
-                            method=SendMessage(chat_id=42, text="synthetic progress"),
-                            message="synthetic Telegram progress rejection",
-                        )
-                message.answer.side_effect = reject_progress
+            rejected_previews = []
+            async def reject_optional(text, **kwargs):
+                if progress_failure and ("Подготавливаю книгу" in text or "Создаю персональную сказку" in text):
+                    rejected_progress.append(True)
+                    raise TelegramBadRequest(
+                        method=SendMessage(chat_id=42, text="synthetic progress"),
+                        message="synthetic Telegram progress rejection",
+                    )
+                if preview_failure and "Лена увидела свет" in text:
+                    rejected_previews.append(True)
+                    raise TelegramBadRequest(
+                        method=SendMessage(chat_id=42, text="synthetic preview"),
+                        message="synthetic Telegram preview rejection",
+                    )
+            message.answer.side_effect = reject_optional
             await bot.successful_payment_handler(message, state)
             assert len(rejected_progress) == (2 if progress_failure else 0)
             message.answer.side_effect = None
@@ -272,35 +289,35 @@ def test_synthetic_order_through_real_handlers_and_api(
             preface = next(page for page in reader.pages if "До рассвета" in (page.extract_text() or ""))
             assert len(preface.images) == 0
             assert await state.get_state() is None
-            assert message.answer_photo.await_count == 5
+            assert len(rejected_previews) == int(preview_failure)
+            assert message.answer_photo.await_count == (2 if preview_failure else 5)
             captions = [call.kwargs["caption"] for call in message.answer_photo.await_args_list]
             assert captions[0].endswith("ТЕСТ: Лена и свет")
-            assert captions[1:] == [
+            assert captions[1:] == (["Глава 1. Находка"] if preview_failure else [
                 "Глава 1. Находка", "Глава 2. Друг", "Глава 3. Фонарь", "Глава 4. Домой",
-            ]
+            ])
+            if preview_failure:
+                assert "Предпросмотр в чате мог быть неполным" in message.answer.await_args.args[0]
+            with Session(engine) as observer:
+                claim = observer.scalar(select(DeliveryReservation))
+                assert claim.telegram_message_id == 73
+                story_id = claim.story_id
 
-            # A replay returns the SAME document from the saved paid order.
-            # Redelivery is at-least-once; it must not re-run paid generation.
+            # A replay must not automatically send again. Explicit library
+            # retrieval remains repeatable and returns the same saved bytes.
             # A newer questionnaire must remain untouched by an old payment.
             await state.set_state(bot.Form.name)
             await state.update_data(child_name="Новая анкета")
             assert get_photo.await_count == int(with_photo)
             assert download_photo.await_count == int(with_photo)
             get_photo.side_effect = RuntimeError("original photo no longer available")
-            rejected_previews = []
-            if preview_failure:
-                async def reject_preview(text, **kwargs):
-                    if "Лена увидела свет" in text:
-                        rejected_previews.append(True)
-                        raise TelegramBadRequest(
-                            method=SendMessage(chat_id=42, text="synthetic preview"),
-                            message="synthetic Telegram preview rejection",
-                        )
-                message.answer.side_effect = reject_preview
             await bot.successful_payment_handler(message, state)
-            assert len(rejected_previews) == int(preview_failure)
-            if preview_failure:
-                assert "Предпросмотр в чате мог быть неполным" in message.answer.await_args.args[0]
+            assert message.answer_document.await_count == 1
+            assert '/books' in message.answer.await_args.args[0]
+            # Exercise the actual library callback with a synthetic Message.
+            monkeypatch.setattr(bot, "Message", type(message))
+            await bot.select_book(SimpleNamespace(message=message, from_user=message.from_user,
+                                                  data=f"book:{story_id}", answer=AsyncMock()))
             assert get_photo.await_count == int(with_photo)
             assert download_photo.await_count == int(with_photo)
             assert message.answer_document.await_count == 2

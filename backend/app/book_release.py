@@ -37,12 +37,22 @@ def require_complete_images(locators: list[str | None]) -> None:
     filenames = [_filename(url, "images") for url in locators]
     if len(set(filenames)) != EXPECTED_IMAGES:
         raise ValueError("Illustration slots must refer to distinct files")
+    fingerprints = set()
     for filename in filenames:
         path = locate_media(get_settings().images_dir, filename, kind="images")
         with Image.open(path) as image:
             if image.width < 1 or image.height < 1:
                 raise ValueError("Empty illustration")
             image.verify()
+        # verify() alone does not decode JPEG pixels. Reopen after verify and
+        # check the actual decoded content, not just distinct filenames.
+        with Image.open(path) as image:
+            image.load()
+            with image.convert("RGBA") as pixels:
+                fingerprint = (pixels.size, hashlib.sha256(pixels.tobytes()).digest())
+        if fingerprint in fingerprints:
+            raise ValueError("Illustration slots must contain distinct decoded images")
+        fingerprints.add(fingerprint)
 
 
 def require_complete_pdf(locator: str) -> str:
@@ -56,8 +66,19 @@ def require_complete_pdf(locator: str) -> str:
     reader = PdfReader(BytesIO(content))
     if not reader.pages:
         raise ValueError("Empty PDF")
-    if sum(len(page.images) for page in reader.pages) < EXPECTED_IMAGES:
-        raise ValueError("Five embedded illustrations are required")
+    # A shared XObject may be referenced on every page. Count distinct decoded
+    # pixels, not occurrences of the same image resource in page dictionaries.
+    fingerprints = set()
+    for page in reader.pages:
+        for embedded in page.images:
+            image = embedded.image
+            if image is None or image.width < 1 or image.height < 1:
+                raise ValueError("Unreadable embedded illustration")
+            image.load()
+            with image.convert("RGBA") as pixels:
+                fingerprints.add((pixels.size, hashlib.sha256(pixels.tobytes()).digest()))
+    if len(fingerprints) < EXPECTED_IMAGES:
+        raise ValueError("Five distinct embedded illustrations are required")
     if not any((page.extract_text() or "").strip() for page in reader.pages):
         raise ValueError("Missing readable PDF text")
     return hashlib.sha256(content).hexdigest()

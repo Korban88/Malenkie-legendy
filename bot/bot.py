@@ -825,19 +825,68 @@ async def _send_image(message: Message, img_url: str, caption: str = '') -> bool
         return False
 
 
-async def _send_pdf(message: Message, pdf_url: str, episode: int, *, expected_sha256: str | None = None) -> bool:
+async def _send_pdf(message: Message, pdf_url: str, episode: int, *,
+                    expected_sha256: str | None = None,
+                    automatic_order: tuple[int, int, str] | None = None) -> bool:
+    """Manual retrieval is repeatable; an automatic paid send is at most once."""
     try:
         _, content = await _download_private_media(pdf_url, "stories")
         if expected_sha256 is not None and hashlib.sha256(content).hexdigest() != expected_sha256:
             return False
-        await message.answer_document(
-            document=BufferedInputFile(content, filename=f"legendkids-episode-{episode}.pdf"),
+        filename = f"legendkids-episode-{episode}.pdf"
+        # Prepare the exact attachment before reserving the one automatic attempt.
+        attachment = BufferedInputFile(content, filename=filename)
+        claim = None
+        if automatic_order is not None:
+            order_id, story_id, recipient = automatic_order
+            if (type(order_id) is not int or order_id <= 0
+                    or type(story_id) is not int or story_id <= 0
+                    or message.chat.type != "private" or str(message.chat.id) != recipient
+                    or not isinstance(expected_sha256, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None):
+                return False
+            response = await _checkout_request("delivery/reserve", {
+                "order_id": order_id, "story_id": story_id,
+                "external_user_id": recipient, "expected_sha256": expected_sha256,
+            })
+            claim = response.get("reservation")
+            if (not isinstance(claim, dict)
+                    or claim.get("order_id") != order_id or claim.get("story_id") != story_id
+                    or claim.get("recipient") != recipient or claim.get("pdf_url") != pdf_url
+                    or claim.get("pdf_sha256") != expected_sha256
+                    or not isinstance(claim.get("token"), str)
+                    or re.fullmatch(r"[0-9a-f]{32}", claim["token"]) is None):
+                return False
+        sent = await message.answer_document(
+            document=attachment,
             caption="Ваша персональная сказка в PDF",
         )
-        return True
+        if claim is None:
+            return True
+        # A timeout, malformed response or wrong chat must never be treated as
+        # a positive receipt. The reservation remains consumed on all failures.
+        chat = getattr(sent, "chat", None)
+        document = getattr(sent, "document", None)
+        message_id = getattr(sent, "message_id", None)
+        if (getattr(chat, "type", None) != "private"
+                or str(getattr(chat, "id", None)) != recipient
+                or type(message_id) is not int or not 0 < message_id <= 2147483647
+                or getattr(document, "file_name", None) != filename
+                or getattr(document, "file_size", None) != len(content)
+                or not isinstance(getattr(document, "file_id", None), str)
+                or not document.file_id):
+            return False
+        receipt = {"order_id": order_id, "token": claim["token"], "message_id": message_id}
+        # Only the idempotent acknowledgement may be retried, never the send.
+        for _ in range(2):
+            try:
+                acknowledged = await _checkout_request("delivery/acknowledge", receipt)
+                return acknowledged.get("acknowledged") is True
+            except Exception:
+                continue
+        return False
     except Exception:
         return False
-
 
 @dp.message(Form.awaiting_payment)
 async def awaiting_payment_fallback(message: Message):
@@ -979,6 +1028,12 @@ async def _generate(trigger_message: Message, state: FSMContext, data: dict,
 
 async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
                                   data: dict, result: dict):
+    # All initial previews and documents must go only to the paid buyer.
+    sender = trigger_message.from_user
+    if (sender is None or trigger_message.chat.type != "private"
+            or trigger_message.chat.id != sender.id
+            or str(sender.id) != data.get("external_user_id")):
+        return
     child_name = data.get("child_name", "Герой")
     illustrations = result.get("images_urls")
     # Do not deliver a failed/incomplete paid order, including legacy records.
@@ -998,6 +1053,36 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
     episode     = result.get("episode_number", 1)
     title       = result.get("title", "")
     next_hook   = result.get("next_hook")
+
+    # Reuse the same ownership, technical PDF gate and byte digest as /books.
+    # The generation response alone does not bind the later downloaded bytes.
+    story_id = result.get("story_id")
+    try:
+        if type(story_id) is not int or story_id <= 0:
+            raise ValueError("Invalid paid story ID")
+        book = await _checkout_request(f"library/{story_id}", {
+            "external_user_id": str(sender.id),
+        })
+        digest = book.get("pdf_sha256") if isinstance(book, dict) else None
+        if (not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                or book.get("pdf_url") != pdf_url or book.get("episode_number") != episode):
+            raise ValueError("Paid book verification failed")
+    except (httpx.HTTPError, RuntimeError, ValueError):
+        await trigger_message.answer(
+            "Оплата получена, но книгу пока не удалось проверить. "
+            "Повторно платить не нужно. Попробуйте /books позже."
+        )
+        return
+
+    # Reserve and deliver the exact paid PDF before optional previews. A replay
+    # (including an unknown transport outcome) may only use explicit /books.
+    if not await _send_pdf(trigger_message, pdf_url, episode, expected_sha256=digest,
+                           automatic_order=(data.get("order_id"), story_id, str(sender.id))):
+        await trigger_message.answer(
+            "Автоматическая выдача не подтверждена или уже была начата. "
+            "Повторно платить не нужно. Готовую книгу можно получить через /books."
+        )
+        return
 
     # The paid PDF is the primary deliverable. Telegram may reject an optional
     # preview message (for example malformed generated Markdown) or photo.
@@ -1043,15 +1128,6 @@ async def _deliver_generated_book(trigger_message: Message, state: FSMContext,
     except TelegramAPIError:
         preview_complete = False
 
-    # ── PDF и кнопки: private authenticated delivery ────────────────────
-    if not pdf_url or not await _send_pdf(trigger_message, pdf_url, episode):
-        # The customer has already paid. Do not clear the paid state or
-        # invite another payment. Durable recovery across restarts remains P0.
-        await trigger_message.answer(
-            "Оплата получена, но PDF пока не удалось доставить. "
-            "Повторно платить не нужно: заказ требует восстановления."
-        )
-        return
     confirmation = "Сказка доставлена документом выше. Его можно открыть повторно в этом чате."
     if not preview_complete:
         confirmation += " Предпросмотр в чате мог быть неполным; полная книга находится в PDF."
