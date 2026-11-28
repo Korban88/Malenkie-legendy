@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..db import SessionLocal
 from ..internal_auth import require_internal_token
-from ..services.telegram_delivery import acknowledge_delivery, reserve_ready_delivery
+from ..services.telegram_delivery import acknowledge_delivery, pending_automatic_delivery_page, reserve_ready_delivery
 
 router = APIRouter(prefix='/api/payments/telegram/delivery', tags=['delivery'],
                    dependencies=[Depends(require_internal_token)])
@@ -44,3 +44,20 @@ def acknowledge(payload: ReceiptRequest, sessions=Depends(delivery_sessions)):
     # Trusted bot adapter must verify the returned chat and document identity.
     # This endpoint persists a receipt; it cannot attest that Telegram sent it.
     return {'acknowledged': acknowledge_delivery(sessions, **payload.model_dump())}
+
+
+class PendingRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    after_story_id: int = Field(default=0, strict=True, ge=0, le=2147483647)
+
+
+@router.post('/pending')
+def pending(payload: PendingRequest, sessions=Depends(delivery_sessions)):
+    return pending_automatic_delivery_page(sessions, after_story_id=payload.after_story_id)
+
+
+@router.post('/reserve-recovered')
+def reserve_recovered(payload: ReserveRequest, sessions=Depends(delivery_sessions)):
+    # Recheck the new-invoice marker and one-story condition at claim time.
+    claim = reserve_ready_delivery(sessions, recovery=True, **payload.model_dump())
+    return {'reservation': asdict(claim) if claim is not None else None}

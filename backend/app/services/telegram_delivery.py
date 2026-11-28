@@ -43,7 +43,8 @@ class ReservedDocument:
 
 def reserve_ready_delivery(session_factory, *, order_id: int, story_id: int,
                            external_user_id: str,
-                           expected_sha256: str | None = None) -> ReservedDocument | None:
+                           expected_sha256: str | None = None,
+                           recovery: bool = False) -> ReservedDocument | None:
     """Use a dedicated transaction; return a reservation only after commit."""
     if (type(order_id) is not int or order_id <= 0 or type(story_id) is not int
             or story_id <= 0 or not isinstance(external_user_id, str)
@@ -57,9 +58,18 @@ def reserve_ready_delivery(session_factory, *, order_id: int, story_id: int,
         ))
         if db.scalar(existing) is not None:
             return None
-        row = db.execute(_owned_books(external_user_id).where(
+        query = _owned_books(external_user_id).where(
             Story.id == story_id, Order.id == order_id,
-        )).one_or_none()
+        )
+        if recovery:
+            sibling = aliased(Story)
+            story_count = (select(func.count(sibling.id))
+                           .where(sibling.order_id == Order.id).correlate(Order).scalar_subquery())
+            query = query.where(
+                Order.meta['telegram_auto_delivery_v1'].as_string() == 'enabled',
+                story_count == 1,
+            )
+        row = db.execute(query).one_or_none()
         if row is None:
             return None
         digest = _checked_digest(row)

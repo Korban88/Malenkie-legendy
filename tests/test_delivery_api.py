@@ -114,3 +114,67 @@ def test_unknown_transport_and_receipt_auth(api):
         assert db.get(DeliveryReservation, request['order_id']).telegram_message_id is None
         assert find_book(db, '101', request['story_id']) is not None
         assert find_book(db, '202', request['story_id']) is None
+
+
+def enable_recovery(factory, request):
+    with factory.begin() as db:
+        db.get(Order, request['order_id']).meta = {'telegram_auto_delivery_v1': 'enabled'}
+
+
+def test_recovery_endpoints_auth_and_cursor(api):
+    client, factory, request = api
+    enable_recovery(factory, request)
+    assert client.post(ROOT + '/pending', json={}).status_code == 401
+    assert client.post(ROOT + '/reserve-recovered', json=request).status_code == 401
+    for cursor in (-1, True, '1', 2147483648):
+        assert client.post(ROOT + '/pending', json={'after_story_id': cursor}, headers=HEADER).status_code == 422
+    assert client.post(ROOT + '/pending', json={'force': True}, headers=HEADER).status_code == 422
+    with factory() as db:
+        assert db.scalar(select(func.count(DeliveryReservation.order_id))) == 0
+
+
+def test_recovered_delivery_opt_in_and_shared_reservation(api):
+    client, factory, request = api
+    assert client.post(ROOT + '/pending', json={}, headers=HEADER).json()['candidates'] == []
+    assert client.post(ROOT + '/reserve-recovered', json=request, headers=HEADER).json() == {'reservation': None}
+    enable_recovery(factory, request)
+    page = client.post(ROOT + '/pending', json={}, headers=HEADER).json()
+    assert len(page['candidates']) == 1 and page['next_after_story_id'] is None
+    assert page['candidates'][0]['pdf_sha256'] == request['expected_sha256']
+    assert page['candidates'][0]['recipient'] == '101'
+    assert client.post(ROOT + '/pending', json={'after_story_id': request['story_id']}, headers=HEADER).json()['candidates'] == []
+    claim = client.post(ROOT + '/reserve-recovered', json=request, headers=HEADER).json()['reservation']
+    assert claim['recipient'] == '101' and claim['pdf_sha256'] == request['expected_sha256']
+    assert client.post(ROOT + '/reserve', json=request, headers=HEADER).json() == {'reservation': None}
+    assert client.post(ROOT + '/reserve-recovered', json=request, headers=HEADER).json() == {'reservation': None}
+    assert client.post(ROOT + '/pending', json={}, headers=HEADER).json()['candidates'] == []
+    with factory() as db:
+        assert db.get(DeliveryReservation, request['order_id']).telegram_message_id is None
+        assert find_book(db, '101', request['story_id']) is not None
+
+
+@pytest.mark.parametrize('change', ['revoke', 'sibling', 'unpaid', 'wrong_owner', 'changed_digest'])
+def test_recovery_rechecks_stale_candidate(api, change):
+    client, factory, request = api
+    enable_recovery(factory, request)
+    assert len(client.post(ROOT + '/pending', json={}, headers=HEADER).json()['candidates']) == 1
+    with factory.begin() as db:
+        order = db.get(Order, request['order_id'])
+        story = db.get(Story, request['story_id'])
+        if change == 'revoke': order.meta = {}
+        if change == 'sibling':
+            db.add(Story(order_id=order.id, child_id=story.child_id, episode_number=2, status='queued'))
+        if change == 'unpaid': order.status = 'created'
+        if change == 'wrong_owner': request['external_user_id'] = '202'
+        if change == 'changed_digest': request['expected_sha256'] = '0' * 64
+    assert client.post(ROOT + '/reserve-recovered', json=request, headers=HEADER).json() == {'reservation': None}
+    with factory() as db:
+        assert db.scalar(select(func.count(DeliveryReservation.order_id))) == 0
+
+
+def test_initial_claim_excludes_recovery(api):
+    client, factory, request = api
+    enable_recovery(factory, request)
+    assert client.post(ROOT + '/reserve', json=request, headers=HEADER).json()['reservation'] is not None
+    assert client.post(ROOT + '/reserve-recovered', json=request, headers=HEADER).json() == {'reservation': None}
+    assert client.post(ROOT + '/pending', json={}, headers=HEADER).json()['candidates'] == []
