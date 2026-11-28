@@ -107,6 +107,7 @@ def create_telegram_invoice(db: Session, payload: dict) -> dict:
         provider_payment_id=None,
         meta={
             'currency': 'XTR',
+            'telegram_auto_delivery_v1': 'enabled',  # New invoices only; never backfill.
             'money_v1': money.to_metadata(),
             'telegram_invoice_v1': {
                 'version': 1,

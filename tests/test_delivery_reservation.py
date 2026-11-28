@@ -176,3 +176,80 @@ def test_two_receipts_cannot_overwrite_each_other(paid):
         assert db.get(DeliveryReservation, claim.order_id).telegram_message_id == winner
     assert acknowledge_delivery(factory, order_id=claim.order_id,
                                 token=claim.token, message_id=winner)
+
+
+
+def test_pending_delivery_only_new_invoices_and_no_duplicate_stories(paid):
+    factory, args, second, path, engine = paid
+    scan = telegram_delivery.pending_automatic_delivery_page
+    assert scan(factory)['candidates'] == []  # Historical ready books are not queued.
+    with factory.begin() as db:
+        db.get(Order, args['order_id']).meta = {'telegram_auto_delivery_v1': 'enabled'}
+    assert scan(factory)['candidates'] == []  # Two stories for one order is ambiguous.
+    with factory.begin() as db:
+        db.delete(db.get(Story, second))
+    engine.dispose()
+    reopened = create_engine(engine.url)
+    try:
+        next_factory = sessionmaker(bind=reopened)
+        candidate, = scan(next_factory)['candidates']
+        assert candidate == {
+            'order_id': args['order_id'], 'story_id': args['story_id'],
+            'recipient': '101', 'episode_number': 1,
+            'pdf_url': '/files/stories/' + path.name,
+            'pdf_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        assert scan(next_factory, after_story_id=args['story_id'])['candidates'] == []
+        with next_factory() as db:
+            assert db.scalar(select(func.count(DeliveryReservation.order_id))) == 0
+        assert reserve_ready_delivery(next_factory, **args) is not None
+        assert scan(next_factory)['candidates'] == []  # Unknown transport outcome.
+    finally:
+        reopened.dispose()
+
+
+@pytest.mark.parametrize('bad', ['unpaid', 'no_receipt', 'wrong_owner', 'invalid_recipient',
+                                 'not_ready', 'bad_pdf', 'wrong_channel'])
+def test_pending_delivery_excludes_unsafe_candidate(paid, bad):
+    factory, args, second, path, _ = paid
+    with factory.begin() as db:
+        db.delete(db.get(Story, second))
+        order = db.get(Order, args['order_id'])
+        order.meta = {'telegram_auto_delivery_v1': 'enabled'}
+        if bad == 'unpaid': order.status = 'created'
+        if bad == 'no_receipt': order.provider_payment_id = None
+        if bad == 'wrong_owner':
+            stranger = User(external_id='202', channel='telegram')
+            db.add(stranger); db.flush()
+            order.user_id = stranger.id
+        if bad == 'invalid_recipient': db.get(User, order.user_id).external_id = '-101'
+        if bad == 'wrong_channel': db.get(User, order.user_id).channel = 'web'
+        if bad == 'not_ready': db.get(Story, args['story_id']).status = 'pdf_pending'
+    if bad == 'bad_pdf': path.write_bytes(b'broken pdf')
+    assert telegram_delivery.pending_automatic_delivery_page(factory)['candidates'] == []
+
+
+def test_pending_delivery_cursor_advances_over_rejected_documents(paid):
+    factory, args, second, path, _ = paid
+    with factory.begin() as db:
+        db.delete(db.get(Story, second))
+        first = db.get(Order, args['order_id'])
+        first.meta = {'telegram_auto_delivery_v1': 'enabled'}
+        db.get(Story, args['story_id']).pdf_url = '/files/stories/' + 'b' * 32 + '.pdf'
+        for i in range(16):
+            order = Order(user_id=first.user_id, child_id=first.child_id,
+                          provider='telegram_stars', provider_payment_id=f'synthetic-{i}',
+                          tariff='story', amount_rub=150, status='paid',
+                          meta={'telegram_auto_delivery_v1': 'enabled'})
+            db.add(order); db.flush()
+            story = Story(order_id=order.id, child_id=first.child_id, episode_number=i+2,
+                          status='ready', pdf_url='/files/stories/' + (
+                              path.name if i == 15 else 'b' * 32 + '.pdf'))
+            db.add(story); db.flush()
+            last = story.id
+    scan = telegram_delivery.pending_automatic_delivery_page
+    first_page = scan(factory)
+    assert first_page['candidates'] == [] and first_page['next_after_story_id'] is not None
+    second_page = scan(factory, after_story_id=first_page['next_after_story_id'])
+    assert [row['story_id'] for row in second_page['candidates']] == [last]
+    assert second_page['next_after_story_id'] is None

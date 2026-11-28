@@ -432,3 +432,18 @@ def test_ready_story_id_is_bound_to_validated_paid_invoice(checkout_engine):
     with Session(checkout_engine) as db:
         with pytest.raises(ValueError, match='different payment'):
             accept_telegram_receipt(db, {**paid, 'telegram_payment_charge_id': 'wrong-charge'})
+
+
+
+def test_only_new_invoice_enables_automatic_delivery(checkout_engine):
+    with Session(checkout_engine) as db:
+        invoice = create_telegram_invoice(db, questionnaire())
+        order = db.get(Order, invoice['order_id'])
+        assert order.meta['telegram_auto_delivery_v1'] == 'enabled'
+        # Simulate an existing pre-cutover invoice, not a migration or backfill.
+        order.meta = {key: value for key, value in order.meta.items()
+                      if key != 'telegram_auto_delivery_v1'}
+        db.commit()
+        assert create_telegram_invoice(db, questionnaire()) == invoice
+        accept_telegram_receipt(db, payment(invoice, telegram_payment_charge_id='synthetic-legacy'))
+        assert 'telegram_auto_delivery_v1' not in db.get(Order, invoice['order_id']).meta
