@@ -42,16 +42,19 @@ def sign_cover_reference(filename: str, *, now: int | None = None) -> str:
         raise ValueError("Invalid cover name")
     if len(settings.backend_internal_token) < 32:
         raise RuntimeError("Internal secret is not configured")
-    parsed = urlsplit(settings.public_base_url)
+    base = settings.public_base_url.rstrip("/")
+    parsed = urlsplit(base)
     if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
         raise RuntimeError("HTTPS PUBLIC_BASE_URL is required for a signed cover reference")
+    # A trailing '?' or '#' also swallows the appended file path.
+    if "?" in base or "#" in base:
+        raise RuntimeError("PUBLIC_BASE_URL for signed covers cannot contain a query or fragment")
     expires = int(time.time() if now is None else now) + _COVER_TTL
     signature = hmac.new(
         settings.backend_internal_token.encode("utf-8"),
         _signed_message(filename, expires),
         hashlib.sha256,
     ).hexdigest()
-    base = settings.public_base_url.rstrip("/")
     return f"{base}/files/images/{quote(filename)}?expires={expires}&signature={signature}"
 
 

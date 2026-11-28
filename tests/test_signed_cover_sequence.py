@@ -32,6 +32,10 @@ def run_batch():
 
 @pytest.mark.parametrize("field, value", [
     ("public_base_url", "http://test.invalid"),
+    ("public_base_url", "https://test.invalid?tenant=review"),
+    ("public_base_url", "https://test.invalid#preview"),
+    ("public_base_url", "https://test.invalid?"),
+    ("public_base_url", "https://test.invalid#"),
     ("backend_internal_token", "short"),
 ])
 def test_invalid_reference_configuration_spends_no_requests(configured, monkeypatch, field, value):
