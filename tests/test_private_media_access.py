@@ -3,6 +3,7 @@
 Run: python -m pytest -q tests/test_private_media_access.py
 Integration tests with a live reverse proxy and bot still required before deploy.
 """
+import ast
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
@@ -75,4 +76,19 @@ def test_no_public_book_endpoint_or_public_pdf_buttons():
     assert "@app.get('/api/internal/files/stories/{filename}'" in main
     assert "dependencies=[Depends(require_internal_token)]" in main
     assert "url=pdf_url" not in bot
-    assert "await _send_pdf(trigger_message, pdf_url, episode)" in bot
+    # Both purchase delivery and family retrieval must pass the verified digest.
+    # The integration tests separately replace the bytes and check for zero sends.
+    senders = set()
+    for handler in ast.parse(bot).body:
+        if not isinstance(handler, ast.AsyncFunctionDef):
+            continue
+        for call in ast.walk(handler):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and call.func.id == "_send_pdf"):
+                continue
+            assert any(
+                argument.arg == "expected_sha256" and not isinstance(argument.value, ast.Constant)
+                for argument in call.keywords
+            ), f"{handler.name} must pass the verified PDF digest"
+            senders.add(handler.name)
+    assert {"_deliver_generated_book", "select_book"} <= senders
