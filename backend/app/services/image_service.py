@@ -3,13 +3,15 @@ import hashlib
 import logging
 import uuid
 from pathlib import Path
+from io import BytesIO
 from urllib.parse import quote
 
 import httpx
+from PIL import Image
 
 from ..book_release import EXPECTED_IMAGES, require_illustration_prompts
 from ..config import get_settings
-from ..private_media import sign_cover_reference
+from ..private_media import locate_media, sign_cover_reference
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -316,10 +318,31 @@ def _build_prompt(scene_prompt: str, char_desc: str = '', image_style: str = 'wa
     return ". ".join(parts)[:3900]
 
 
+def _read_verified_reference_image(directory: Path, filename: str) -> bytes:
+    """Validate the saved bytes before signing or using a generated reference."""
+    path = locate_media(str(directory), filename, kind="images")
+    with path.open("rb") as source:
+        content = source.read(30 * 1024 * 1024 + 1)
+    if len(content) > 30 * 1024 * 1024:
+        raise ValueError("Reference image exceeds delivery limit")
+    with Image.open(BytesIO(content)) as image:
+        if image.format not in {"PNG", "JPEG", "WEBP"}:
+            raise ValueError("Unsupported reference image format")
+        image.verify()
+    with Image.open(BytesIO(content)) as image:
+        image.load()
+    return content
+
+
 def generate_images(child_name, age, style, photo_base64, char_desc='',
                     scene_prompts=None, count=EXPECTED_IMAGES, image_style='watercolor'):
     if count == EXPECTED_IMAGES:
         require_illustration_prompts(scene_prompts)
+    # Legacy text-only cover routes silently discard an uploaded photo. Do
+    # not treat their result as a personalized photo illustration.
+    photo_bound = bool(photo_base64)
+    if photo_bound and (settings.image_provider != 'stability' or not settings.stability_api_key):
+        raise RuntimeError('Configured image route cannot preserve the source photo')
     requires_cover_reference = settings.image_provider == 'together' and count > 1
     if requires_cover_reference:
         # Validate signing configuration before any provider or photo I/O.
@@ -353,16 +376,28 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
         )
         try:
             ref = photo_base64 if i == 0 else (cover_ref_b64 or photo_base64)
-            filename = _generate_single(
-                prompt, ref,
-                cover_fidelity=(i > 0 and cover_ref_b64 is not None),
-                cover_url=cover_public_url if i > 0 else None,
-            )
+            if photo_bound:
+                # Stay on the explicitly configured reference-aware legacy route.
+                # Never switch to a text-only backup or a second provider.
+                filename = _stability_generate(prompt, ref, fidelity=0.82 if i > 0 else 0.60)
+            else:
+                filename = _generate_single(
+                    prompt, ref,
+                    cover_fidelity=(i > 0 and cover_ref_b64 is not None),
+                    cover_url=cover_public_url if i > 0 else None,
+                )
+            verified = None
+            if photo_bound or requires_cover_reference:
+                verified = _read_verified_reference_image(out_dir, filename)
             if i == 0:
                 # Together receives a time-limited cover reference, never a permanently public image.
                 cover_public_url = sign_cover_reference(filename) if requires_cover_reference else None
                 # For non-Together providers: extract style+character via GPT-4o Vision
-                if settings.image_provider != 'together':
+                if photo_bound:
+                    # No optional external vision call for this route. Subsequent
+                    # scenes must use the actual saved cover, not a missing file.
+                    cover_ref_b64 = base64.b64encode(verified).decode()
+                elif settings.image_provider != 'together':
                     try:
                         cover_path = out_dir / filename
                         if cover_path.exists():
@@ -373,7 +408,7 @@ def generate_images(child_name, age, style, photo_base64, char_desc='',
                         pass
             urls[i] = f'{settings.public_base_url}/files/images/{filename}'
         except Exception as exc:
-            if requires_cover_reference:
+            if requires_cover_reference or photo_bound:
                 # An incomplete reference-bound batch cannot pass the book gate.
                 # Do not spend on later slots or expose signed URLs in logs.
                 logger.warning('Referenced image sequence stopped at slot %d (%s)', i, type(exc).__name__)
@@ -575,8 +610,10 @@ def _stability_generate(prompt: str, photo_base64: str | None, fidelity: float =
             files={'image': ('reference.png', photo_bytes, 'image/png')},
             timeout=120,
         )
-        if response.status_code == 200:
-            return _save_image_bytes(response.content, out_dir)
+        # An unsuccessful reference request must not silently become a
+        # second billable, unreferenced generation.
+        response.raise_for_status()
+        return _save_image_bytes(response.content, out_dir)
     response = httpx.post(
         'https://api.stability.ai/v2beta/stable-image/generate/core',
         headers={'Authorization': f'Bearer {settings.stability_api_key}', 'Accept': 'image/*'},

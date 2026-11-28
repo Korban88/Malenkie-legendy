@@ -4,6 +4,7 @@ from unittest.mock import Mock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from PIL import Image
 
 from backend.app import private_media
 from backend.app.services import image_service
@@ -23,6 +24,9 @@ def configured(tmp_path, monkeypatch):
     monkeypatch.setattr(image_service, "settings", config)
     monkeypatch.setattr(private_media, "get_settings", lambda: config)
     monkeypatch.setattr(image_service, "_build_prompt", lambda scene, *a, **kw: scene)
+    for i in range(1, 6):
+        Image.new("RGB", (32, 24), (i * 20, 90, 120)).save(tmp_path / (str(i) * 32 + ".png"))
+    monkeypatch.setattr(image_service, "sign_cover_reference", private_media.sign_cover_reference)
     return config
 
 
