@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import os
 import asyncio
 import uuid
@@ -461,7 +462,9 @@ async def select_book(call: CallbackQuery):
     except (httpx.HTTPError, RuntimeError, ValueError):
         await message.answer("Не удалось получить PDF. Попробуйте /books позже.")
         return
-    if not await _send_pdf(message, book["pdf_url"], book["episode_number"]):
+    digest = book.get("pdf_sha256")
+    if (not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or not await _send_pdf(message, book["pdf_url"], book["episode_number"], expected_sha256=digest)):
         await message.answer("Не удалось доставить PDF. Книгу можно снова выбрать через /books.")
 
 
@@ -822,9 +825,11 @@ async def _send_image(message: Message, img_url: str, caption: str = '') -> bool
         return False
 
 
-async def _send_pdf(message: Message, pdf_url: str, episode: int) -> bool:
+async def _send_pdf(message: Message, pdf_url: str, episode: int, *, expected_sha256: str | None = None) -> bool:
     try:
         _, content = await _download_private_media(pdf_url, "stories")
+        if expected_sha256 is not None and hashlib.sha256(content).hexdigest() != expected_sha256:
+            return False
         await message.answer_document(
             document=BufferedInputFile(content, filename=f"legendkids-episode-{episode}.pdf"),
             caption="Ваша персональная сказка в PDF",

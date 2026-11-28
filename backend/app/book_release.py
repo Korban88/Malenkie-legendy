@@ -3,6 +3,8 @@
 Never label an incomplete illustrated book ready. This gate does not replace
 editorial review, visual approval, durable payment recovery or authorization.
 """
+import hashlib
+from io import BytesIO
 from urllib.parse import urlsplit
 from PIL import Image
 from pypdf import PdfReader
@@ -43,12 +45,19 @@ def require_complete_images(locators: list[str | None]) -> None:
             image.verify()
 
 
-def require_complete_pdf(locator: str) -> None:
+def require_complete_pdf(locator: str) -> str:
     path = locate_media(get_settings().stories_dir, _filename(locator, "stories"), kind="stories")
-    reader = PdfReader(path)
+    # The bot delivers at most 30 MiB. Validate and fingerprint the same bytes,
+    # including when a stored file is replaced during a later download.
+    with path.open("rb") as source:
+        content = source.read(30 * 1024 * 1024 + 1)
+    if len(content) > 30 * 1024 * 1024:
+        raise ValueError("PDF exceeds delivery limit")
+    reader = PdfReader(BytesIO(content))
     if not reader.pages:
         raise ValueError("Empty PDF")
     if sum(len(page.images) for page in reader.pages) < EXPECTED_IMAGES:
         raise ValueError("Five embedded illustrations are required")
     if not any((page.extract_text() or "").strip() for page in reader.pages):
         raise ValueError("Missing readable PDF text")
+    return hashlib.sha256(content).hexdigest()
